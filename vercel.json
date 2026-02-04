@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "server.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "server.js"
+    }
+  ],
+  "env": {
+    "SUPABASE_URL": "https://pmtpufqtohygciwsdewt.supabase.co",
+    "SUPABASE_KEY": "sb_publishable_9WUXqQA-w5JKRpaojmhZhA_hBApvDsq"
+  }
+}
+

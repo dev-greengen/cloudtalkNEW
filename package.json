@@ -1,0 +1,18 @@
+{
+  "name": "cloudtalk",
+  "version": "1.0.0",
+  "description": "CloudTalk with Supabase",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1"
+  }
+}
+
