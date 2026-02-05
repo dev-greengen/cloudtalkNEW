@@ -878,8 +878,11 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     
     // Process each incoming message
     for (const message of incomingMessages) {
-      const fromNumber = message.from || message.phone_number;
-      if (!fromNumber) continue;
+      const fromNumber = message.from || message.phone_number || message.chat_id?.split('@')[0];
+      if (!fromNumber) {
+        console.log('⚠️  Skipping message - no phone number found:', message.id);
+        continue;
+      }
       
       // Normalize phone number
       let normalizedPhone = fromNumber.replace(/\D/g, '');
@@ -889,6 +892,8 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
         normalizedPhone = '39' + normalizedPhone;
       }
+      
+      console.log(`📨 Processing message from ${normalizedPhone} (original: ${fromNumber}), type: ${message.type}`);
       
       // Check if we've sent a message to this number
       // Get all calls and match by normalizing phone numbers
