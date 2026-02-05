@@ -854,7 +854,7 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     
     const result = await response.json();
     
-    if (!response.ok) {
+    if (!response.ok && allIncomingMessages.length === 0) {
       return res.status(response.status).json({ 
         success: false, 
         error: result.error || result.message || 'Failed to fetch messages',
@@ -862,9 +862,12 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       });
     }
     
+    // Use unique messages from both sources
+    const messagesToProcess = uniqueMessages.length > 0 ? uniqueMessages : (result.messages || []);
+    
     // Filter to only incoming messages (from_me: false)
     // Include text, image, document, and voice messages (could be the bill)
-    const allIncoming = (result.messages || []).filter(msg => {
+    const allIncoming = messagesToProcess.filter(msg => {
       if (msg.from_me === true) return false;
       
       const msgType = msg.type;
