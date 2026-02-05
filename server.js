@@ -21,21 +21,38 @@ app.use(express.text({ type: '*/*', limit: '10mb', verify: (req, res, buf) => {
 // Function to save request to Supabase
 async function saveRequestToDB(requestData) {
   try {
-    // Check if it's a CloudTalk webhook
-    const isCloudTalk = requestData.path.includes('cloudtalk') || 
-                       requestData.path.includes('webhook') ||
-                       (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk'));
+    // Check if it's a CloudTalk webhook by path/user-agent first
+    let isCloudTalk = requestData.path.includes('cloudtalk') || 
+                      requestData.path.includes('webhook') ||
+                      (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk'));
+    
+    // Also check body structure for CloudTalk-specific fields (handles nested body.data)
+    if (requestData.body && typeof requestData.body === 'object') {
+      // Check for nested body.data structure
+      const bodyData = requestData.body.data || requestData.body;
+      
+      // Check if it contains CloudTalk-specific fields
+      const hasCloudTalkFields = bodyData.callId || bodyData.call_id || 
+                                 bodyData.call_result || bodyData.callResult ||
+                                 bodyData.phoneNumber || bodyData.phone_number ||
+                                 bodyData.eventType || bodyData.event_type;
+      
+      if (hasCloudTalkFields) {
+        isCloudTalk = true;
+      }
+    }
     
     // Extract CloudTalk-specific data if present
     let cloudtalkData = null;
     if (requestData.body && typeof requestData.body === 'object') {
+      const bodyData = requestData.body.data || requestData.body;
       cloudtalkData = {
-        call_id: requestData.body.call_id || requestData.body.callId || null,
-        event_type: requestData.body.event_type || requestData.body.eventType || null,
-        phone_number: requestData.body.phone_number || requestData.body.phoneNumber || null,
-        status: requestData.body.status || null,
-        duration: requestData.body.duration || null,
-        timestamp: requestData.body.timestamp || requestData.body.date || null
+        call_id: bodyData.call_id || bodyData.callId || null,
+        event_type: bodyData.event_type || bodyData.eventType || null,
+        phone_number: bodyData.phone_number || bodyData.phoneNumber || bodyData.caller_number || null,
+        status: bodyData.status || null,
+        duration: bodyData.duration || null,
+        timestamp: bodyData.timestamp || bodyData.date || null
       };
     }
     
@@ -74,10 +91,13 @@ async function saveRequestToDB(requestData) {
     console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
     
     // If it's a CloudTalk webhook and we have a body, save to cloudtalk_calls table
-    // Note: Database trigger also handles this, but we do it here too for immediate processing
+    // Note: Database trigger also handles this automatically, but we do it here too for immediate processing
+    // The trigger will handle nested body.data structure, so we pass the full body
     if (isCloudTalk && requestData.body && typeof requestData.body === 'object' && webhookId) {
       try {
-        await saveCloudTalkCallData(webhookId, requestData.body);
+        // Handle nested body.data structure - pass the actual data object
+        const bodyToProcess = requestData.body.data || requestData.body;
+        await saveCloudTalkCallData(webhookId, bodyToProcess);
       } catch (err) {
         console.error('Error saving CloudTalk call data (will be handled by DB trigger):', err.message);
         // Don't fail - database trigger will handle it as backup
