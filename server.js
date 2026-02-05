@@ -883,13 +883,35 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       }
       
       // Check if we've sent a message to this number
-      const phoneWithoutCountry = normalizedPhone.replace(/^39/, '');
-      const phoneWithPlus = `+${normalizedPhone}`;
-      
-      const { data: calls, error: callsError } = await supabase
+      // Get all calls and match by normalizing phone numbers
+      const { data: allCalls, error: callsError } = await supabase
         .from('cloudtalk_calls')
         .select('id, phone_number, electricity_bill_received')
-        .or(`phone_number.eq.${normalizedPhone},phone_number.eq.${phoneWithPlus},phone_number.eq.39${normalizedPhone},phone_number.eq.${phoneWithoutCountry},phone_number.ilike.%${normalizedPhone}%,phone_number.ilike.%${phoneWithoutCountry}%`);
+        .not('phone_number', 'is', null);
+      
+      if (callsError) {
+        console.error('Error querying cloudtalk_calls:', callsError);
+        continue;
+      }
+      
+      // Normalize and match phone numbers
+      const calls = (allCalls || []).filter(call => {
+        if (!call.phone_number) return false;
+        
+        // Normalize database phone number
+        let dbPhone = call.phone_number.replace(/\D/g, '');
+        if (dbPhone.startsWith('+')) {
+          dbPhone = dbPhone.substring(1);
+        }
+        if (dbPhone.length === 10 && !dbPhone.startsWith('39')) {
+          dbPhone = '39' + dbPhone;
+        }
+        
+        // Compare normalized numbers
+        return dbPhone === normalizedPhone || 
+               dbPhone === normalizedPhone.replace(/^39/, '') ||
+               normalizedPhone === dbPhone.replace(/^39/, '');
+      });
       
       if (callsError) {
         console.error('Error querying cloudtalk_calls:', callsError);
