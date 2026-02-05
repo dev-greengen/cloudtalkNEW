@@ -919,8 +919,14 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       }
       
       if (calls && calls.length > 0) {
-        // Filter to only update records where electricity_bill_received is false
-        const callsToUpdate = calls.filter(call => call.electricity_bill_received !== true);
+        console.log(`📞 Found ${calls.length} matching call(s) for ${normalizedPhone}`);
+        // Filter to only update records where electricity_bill_received is false or null
+        const callsToUpdate = calls.filter(call => {
+          const value = call.electricity_bill_received;
+          return value !== true && value !== 'true' && value !== 1;
+        });
+        
+        console.log(`📝 ${callsToUpdate.length} call(s) need updating (current values: ${calls.map(c => c.electricity_bill_received).join(', ')})`);
         
         if (callsToUpdate.length > 0) {
           const callIds = callsToUpdate.map(call => call.id);
