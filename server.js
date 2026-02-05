@@ -859,11 +859,19 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     }
     
     // Filter to only incoming messages (from_me: false)
-    const incomingMessages = (result.messages || []).filter(msg => 
-      msg.from_me === false && 
-      msg.type === 'text' && 
-      msg.text?.body
-    );
+    // Include text, image, document, and voice messages (could be the bill)
+    const incomingMessages = (result.messages || []).filter(msg => {
+      if (msg.from_me === true) return false;
+      
+      const msgType = msg.type;
+      // Accept text, image, document (PDF, etc.), and voice messages
+      if (msgType === 'text' && msg.text?.body) return true;
+      if (msgType === 'image') return true; // Could be bill photo
+      if (msgType === 'document') return true; // Could be PDF bill
+      if (msgType === 'voice') return true; // Voice message
+      
+      return false;
+    });
     
     let updatedCount = 0;
     const updates = [];
