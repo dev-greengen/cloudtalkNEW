@@ -861,7 +861,7 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     
     // Filter to only incoming messages (from_me: false)
     // Include text, image, document, and voice messages (could be the bill)
-    const incomingMessages = (result.messages || []).filter(msg => {
+    const allIncoming = (result.messages || []).filter(msg => {
       if (msg.from_me === true) return false;
       
       const msgType = msg.type;
@@ -870,9 +870,24 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       if (msgType === 'image') return true; // Could be bill photo
       if (msgType === 'document') return true; // Could be PDF bill
       if (msgType === 'voice') return true; // Voice message
+      if (msgType === 'link_preview') return true; // Link previews
       
       return false;
     });
+    
+    // Sort by timestamp descending (most recent first) to ensure we process newest messages
+    const incomingMessages = allIncoming.sort((a, b) => {
+      const tsA = a.timestamp || 0;
+      const tsB = b.timestamp || 0;
+      return tsB - tsA; // Descending order (newest first)
+    });
+    
+    console.log(`📥 Found ${incomingMessages.length} incoming messages (total fetched: ${result.messages?.length || 0})`);
+    if (incomingMessages.length > 0) {
+      const latest = incomingMessages[0];
+      const latestTime = latest.timestamp ? new Date(latest.timestamp * 1000).toISOString() : 'N/A';
+      console.log(`📅 Most recent message timestamp: ${latestTime}`);
+    }
     
     let updatedCount = 0;
     const updates = [];
