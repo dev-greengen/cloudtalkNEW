@@ -830,7 +830,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
 // Polling endpoint to check for new incoming messages and update electricity_bill_received
 app.get('/api/check-whatsapp-replies', async (req, res) => {
   try {
-    const { limit = 50 } = req.query;
+    const { limit = 200 } = req.query; // Increased default limit
     
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
     const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
@@ -839,8 +839,9 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
     }
     
-    // Get recent messages from Whapi.Cloud
-    const response = await fetch(`${whatsappUrl}/messages/list?limit=${limit}`, {
+    // Get recent messages from Whapi.Cloud - get more messages to ensure we catch recent ones
+    // Try to get messages from last 24 hours by requesting a larger limit
+    const response = await fetch(`${whatsappUrl}/messages/list?limit=${Math.max(parseInt(limit), 500)}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
