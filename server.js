@@ -18,8 +18,66 @@ app.use(express.text({ type: '*/*', limit: '10mb', verify: (req, res, buf) => {
   if (!req.rawBody) req.rawBody = buf.toString('utf8');
 }}));
 
+// Function to save request to Supabase
+async function saveRequestToDB(requestData) {
+  try {
+    // Check if it's a CloudTalk webhook
+    const isCloudTalk = requestData.path.includes('cloudtalk') || 
+                       requestData.path.includes('webhook') ||
+                       (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk'));
+    
+    // Extract CloudTalk-specific data if present
+    let cloudtalkData = null;
+    if (requestData.body && typeof requestData.body === 'object') {
+      cloudtalkData = {
+        call_id: requestData.body.call_id || requestData.body.callId || null,
+        event_type: requestData.body.event_type || requestData.body.eventType || null,
+        phone_number: requestData.body.phone_number || requestData.body.phoneNumber || null,
+        status: requestData.body.status || null,
+        duration: requestData.body.duration || null,
+        timestamp: requestData.body.timestamp || requestData.body.date || null
+      };
+    }
+    
+    const dbRecord = {
+      method: requestData.method,
+      path: requestData.path,
+      url: requestData.url,
+      headers: requestData.headers,
+      query: requestData.query,
+      body: requestData.body,
+      raw_body: requestData.rawBody,
+      ip_address: requestData.ip,
+      user_agent: requestData.userAgent,
+      timestamp: requestData.timestamp,
+      is_cloudtalk: isCloudTalk,
+      cloudtalk_call_id: cloudtalkData?.call_id || null,
+      cloudtalk_event_type: cloudtalkData?.event_type || null,
+      cloudtalk_phone_number: cloudtalkData?.phone_number || null,
+      cloudtalk_status: cloudtalkData?.status || null,
+      cloudtalk_duration: cloudtalkData?.duration || null,
+      created_at: new Date().toISOString()
+    };
+    
+    const { data, error } = await supabase
+      .from('webhook_requests')
+      .insert([dbRecord])
+      .select();
+    
+    if (error) {
+      console.error('Error saving to database:', error.message);
+      // Don't throw - continue processing even if DB save fails
+    } else {
+      console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
+    }
+  } catch (error) {
+    console.error('Error in saveRequestToDB:', error.message);
+    // Don't throw - continue processing
+  }
+}
+
 // Capture all requests after parsing
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   // Skip capturing the main page requests to avoid clutter
   if (req.path === '/' && req.method === 'GET') {
     return next();
@@ -43,15 +101,40 @@ app.use((req, res, next) => {
   requests.unshift(requestData); // Add to beginning
   if (requests.length > 100) requests.pop(); // Keep last 100 requests
   
+  // Save to database (async, don't wait)
+  saveRequestToDB(requestData).catch(err => {
+    console.error('Failed to save request to DB:', err.message);
+  });
+  
   next();
 });
 
 // Main endpoint - show all requests
 app.get('/', async (req, res) => {
   try {
-    // Test Supabase connection
-    const { data, error } = await supabase.from('_test').select('*').limit(1);
-    const dbStatus = error && error.code !== 'PGRST116' ? 'connected (no test table)' : 'connected';
+    // Test Supabase connection and get stats
+    let dbStatus = 'connected';
+    let dbStats = { total: 0, cloudtalk: 0 };
+    
+    try {
+      const { count: totalCount } = await supabase
+        .from('webhook_requests')
+        .select('*', { count: 'exact', head: true });
+      
+      const { count: cloudtalkCount } = await supabase
+        .from('webhook_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_cloudtalk', true);
+      
+      dbStats.total = totalCount || 0;
+      dbStats.cloudtalk = cloudtalkCount || 0;
+    } catch (dbError) {
+      if (dbError.code === 'PGRST116') {
+        dbStatus = 'connected (table not created yet - run create-webhook-table.sql)';
+      } else {
+        dbStatus = `connected (error: ${dbError.message})`;
+      }
+    }
     
     // Return HTML page showing all requests
     const html = `<!DOCTYPE html>
@@ -78,7 +161,13 @@ app.get('/', async (req, res) => {
 </head>
 <body>
   <h1>Webhook Inspector <a href="/" class="refresh">🔄 Auto-refresh (5s)</a></h1>
-  <div class="status">Supabase: ${dbStatus} | Total Requests: ${requests.length}</div>
+  <div class="status">
+    Supabase: ${dbStatus} | 
+    In Memory: ${requests.length} | 
+    In DB: ${dbStats.total} (CloudTalk: ${dbStats.cloudtalk}) |
+    <a href="/api/webhooks" style="color: #4ec9b0; margin-left: 10px;">View All in DB</a> |
+    <a href="/api/cloudtalk-webhooks" style="color: #4ec9b0;">CloudTalk Only</a>
+  </div>
   ${requests.length === 0 ? '<div class="empty">No requests yet. Send a request to this URL to see it here.</div>' : ''}
   ${requests.map(req => `
     <div class="request">
@@ -129,21 +218,34 @@ app.get('/', async (req, res) => {
   }
 });
 
-// Webhook endpoint - also captured by middleware above
+// Webhook endpoint - also captured by middleware above (saved automatically)
 app.post('/webhook', async (req, res) => {
   try {
     const payload = req.body;
-    
-    // Example: Save webhook data to database
-    // const { data, error } = await supabase
-    //   .from('webhooks')
-    //   .insert([{ payload, created_at: new Date() }]);
-    
     console.log('Webhook received:', payload);
     
     res.json({ 
       success: true, 
-      message: 'Webhook received',
+      message: 'Webhook received and saved to database',
+      data: payload 
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// CloudTalk-specific webhook endpoint
+app.post('/webhook/cloudtalk', async (req, res) => {
+  try {
+    const payload = req.body;
+    console.log('CloudTalk webhook received:', payload);
+    
+    res.json({ 
+      success: true, 
+      message: 'CloudTalk webhook received and saved to database',
       data: payload 
     });
   } catch (error) {
@@ -157,6 +259,56 @@ app.post('/webhook', async (req, res) => {
 // API endpoint to get requests as JSON
 app.get('/api/requests', (req, res) => {
   res.json({ requests, count: requests.length });
+});
+
+// Get webhook requests from database
+app.get('/api/webhooks', async (req, res) => {
+  try {
+    const { limit = 100, offset = 0, cloudtalk_only = false } = req.query;
+    
+    let query = supabase
+      .from('webhook_requests')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit))
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (cloudtalk_only === 'true') {
+      query = query.eq('is_cloudtalk', true);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    res.json({ 
+      data, 
+      count: data.length,
+      total: data.length 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get CloudTalk webhooks only
+app.get('/api/cloudtalk-webhooks', async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
+    
+    const { data, error } = await supabase
+      .from('webhook_requests')
+      .select('*')
+      .eq('is_cloudtalk', true)
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
+    
+    if (error) throw error;
+    
+    res.json({ data, count: data.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Example: Get data from database
