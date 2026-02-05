@@ -429,6 +429,193 @@ app.get('/api/cloudtalk-calls/:callId', async (req, res) => {
   }
 });
 
+// WhatsApp sending endpoint (called by database trigger or queue processor)
+app.post('/api/send-whatsapp', async (req, res) => {
+  try {
+    const { phone_number, message, call_id, webhook_request_id } = req.body;
+    
+    if (!phone_number) {
+      return res.status(400).json({ error: 'phone_number is required' });
+    }
+    
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    
+    // Get WhatsApp API credentials from environment
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    
+    if (!whatsappToken) {
+      console.error('WHATSAPP_API_TOKEN not configured');
+      return res.status(500).json({ error: 'WhatsApp API not configured' });
+    }
+    
+    // Normalize phone number (remove all non-digits, ensure starts with country code)
+    let normalizedPhone = phone_number.replace(/\D/g, '');
+    if (normalizedPhone.startsWith('+')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    
+    // If Italian number without country code, add 39
+    if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+      normalizedPhone = '39' + normalizedPhone;
+    }
+    
+    console.log(`📤 Sending WhatsApp to ${normalizedPhone} (original: ${phone_number})`);
+    
+    // Send WhatsApp message via Whapi.Cloud API
+    const response = await fetch(`${whatsappUrl}/messages/text`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: normalizedPhone,
+        body: message
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`✅ WhatsApp sent successfully to ${normalizedPhone}`);
+      
+      // Update queue status if webhook_request_id is provided
+      if (webhook_request_id) {
+        try {
+          await supabase
+            .from('whatsapp_queue')
+            .update({ 
+              status: 'sent', 
+              sent_at: new Date().toISOString() 
+            })
+            .eq('webhook_request_id', webhook_request_id)
+            .eq('status', 'pending');
+        } catch (err) {
+          console.error('Error updating queue:', err.message);
+        }
+      }
+      
+      res.json({ 
+        success: true, 
+        message: 'WhatsApp sent successfully',
+        phone_number: normalizedPhone,
+        result 
+      });
+    } else {
+      console.error(`❌ WhatsApp send failed:`, result);
+      res.status(response.status).json({ 
+        success: false, 
+        error: result.error || result.message || 'Failed to send WhatsApp',
+        details: result 
+      });
+    }
+  } catch (error) {
+    console.error('Error sending WhatsApp:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Process WhatsApp queue (can be called periodically)
+app.post('/api/process-whatsapp-queue', async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    
+    // Get pending messages from queue
+    const { data: queueItems, error } = await supabase
+      .from('whatsapp_queue')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(parseInt(limit));
+    
+    if (error) throw error;
+    
+    if (!queueItems || queueItems.length === 0) {
+      return res.json({ processed: 0, message: 'No pending messages' });
+    }
+    
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    
+    if (!whatsappToken) {
+      return res.status(500).json({ error: 'WhatsApp API not configured' });
+    }
+    
+    let processed = 0;
+    let failed = 0;
+    
+    for (const item of queueItems) {
+      try {
+        // Normalize phone number
+        let normalizedPhone = item.phone_number.replace(/\D/g, '');
+        if (normalizedPhone.startsWith('+')) {
+          normalizedPhone = normalizedPhone.substring(1);
+        }
+        if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+          normalizedPhone = '39' + normalizedPhone;
+        }
+        
+        // Send WhatsApp
+        const response = await fetch(`${whatsappUrl}/messages/text`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${whatsappToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            to: normalizedPhone,
+            body: item.message
+          })
+        });
+        
+        if (response.ok) {
+          await supabase
+            .from('whatsapp_queue')
+            .update({ 
+              status: 'sent', 
+              sent_at: new Date().toISOString() 
+            })
+            .eq('id', item.id);
+          processed++;
+        } else {
+          const errorData = await response.json();
+          await supabase
+            .from('whatsapp_queue')
+            .update({ 
+              status: 'failed', 
+              error_message: errorData.error || errorData.message 
+            })
+            .eq('id', item.id);
+          failed++;
+        }
+      } catch (err) {
+        await supabase
+          .from('whatsapp_queue')
+          .update({ 
+            status: 'failed', 
+            error_message: err.message 
+          })
+          .eq('id', item.id);
+        failed++;
+      }
+    }
+    
+    res.json({ 
+      processed, 
+      failed, 
+      total: queueItems.length 
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Example: Get data from database
 app.get('/data', async (req, res) => {
   try {
