@@ -169,10 +169,102 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
       // Don't throw - continue processing
     } else {
       console.log(`✅ Saved CloudTalk call data: Call ID ${callData.call_id || 'N/A'}`);
+      return callData; // Return call data for further processing
     }
+    return null;
   } catch (error) {
     console.error('Error in saveCloudTalkCallData:', error.message);
     // Don't throw - continue processing
+    return null;
+  }
+}
+
+// Function to send WhatsApp message automatically
+async function sendWhatsAppMessage(phoneNumber, webhookRequestId, callId) {
+  try {
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    
+    if (!whatsappToken) {
+      console.error('WHATSAPP_API_TOKEN not configured');
+      return { success: false, error: 'WhatsApp API not configured' };
+    }
+    
+    // Italian message asking for bolletta (electricity bill)
+    const message = `Buongiorno, sono Samuela della Greengen Group.
+
+Come da nostra conversazione telefonica, per procedere con la richiesta di accesso all'Agrisolare di quest'anno, avrei bisogno di ricevere una copia delle bollette elettriche.
+
+Può inviarmele quando le ha a disposizione?
+
+Grazie e buona giornata.`;
+    
+    // Normalize phone number (remove all non-digits, ensure starts with country code)
+    let normalizedPhone = phoneNumber.replace(/\D/g, '');
+    if (normalizedPhone.startsWith('+')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    
+    // If Italian number without country code, add 39
+    if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+      normalizedPhone = '39' + normalizedPhone;
+    }
+    
+    console.log(`📤 Auto-sending WhatsApp to ${normalizedPhone} (original: ${phoneNumber})`);
+    
+    // Send WhatsApp message via Whapi.Cloud API
+    const response = await fetch(`${whatsappUrl}/messages/text`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: normalizedPhone,
+        body: message
+      })
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      console.log(`✅ WhatsApp sent successfully to ${normalizedPhone}`);
+      
+      // Update queue status if exists
+      if (webhookRequestId) {
+        try {
+          await supabase
+            .from('whatsapp_queue')
+            .update({ 
+              status: 'sent', 
+              sent_at: new Date().toISOString() 
+            })
+            .eq('webhook_request_id', webhookRequestId)
+            .eq('status', 'pending');
+        } catch (err) {
+          // Queue might not exist yet, that's okay
+        }
+      }
+      
+      return { 
+        success: true, 
+        phone_number: normalizedPhone,
+        result 
+      };
+    } else {
+      console.error(`❌ WhatsApp send failed:`, result);
+      return { 
+        success: false, 
+        error: result.error || result.message || 'Failed to send WhatsApp',
+        details: result 
+      };
+    }
+  } catch (error) {
+    console.error('Error sending WhatsApp:', error);
+    return { 
+      success: false, 
+      error: error.message 
+    };
   }
 }
 
