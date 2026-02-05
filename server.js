@@ -541,6 +541,55 @@ app.post('/api/send-whatsapp', async (req, res) => {
   }
 });
 
+// Get last sent WhatsApp messages from Whapi
+app.get('/api/whatsapp-messages', async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    
+    if (!whatsappToken) {
+      return res.status(500).json({ error: 'WhatsApp API not configured' });
+    }
+    
+    const response = await fetch(`${whatsappUrl}/messages/list?limit=${limit}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      // Filter to show only sent messages (from_me: true)
+      const sentMessages = result.messages?.filter(msg => msg.from_me === true) || [];
+      
+      res.json({ 
+        success: true,
+        total: result.count || 0,
+        sent_count: sentMessages.length,
+        messages: sentMessages,
+        all_messages: result.messages || []
+      });
+    } else {
+      res.status(response.status).json({ 
+        success: false, 
+        error: result.error || result.message || 'Failed to fetch messages',
+        details: result 
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching WhatsApp messages:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Process WhatsApp queue (can be called periodically)
 app.post('/api/process-whatsapp-queue', async (req, res) => {
   try {
