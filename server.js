@@ -101,10 +101,12 @@ app.use(async (req, res, next) => {
   requests.unshift(requestData); // Add to beginning
   if (requests.length > 100) requests.pop(); // Keep last 100 requests
   
-  // Save to database (async, don't wait)
-  saveRequestToDB(requestData).catch(err => {
-    console.error('Failed to save request to DB:', err.message);
-  });
+  // Save to database ONLY for POST requests (async, don't wait)
+  if (req.method === 'POST') {
+    saveRequestToDB(requestData).catch(err => {
+      console.error('Failed to save request to DB:', err.message);
+    });
+  }
   
   next();
 });
