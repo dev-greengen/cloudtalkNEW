@@ -74,8 +74,14 @@ async function saveRequestToDB(requestData) {
     console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
     
     // If it's a CloudTalk webhook and we have a body, save to cloudtalk_calls table
+    // Note: Database trigger also handles this, but we do it here too for immediate processing
     if (isCloudTalk && requestData.body && typeof requestData.body === 'object' && webhookId) {
-      await saveCloudTalkCallData(webhookId, requestData.body);
+      try {
+        await saveCloudTalkCallData(webhookId, requestData.body);
+      } catch (err) {
+        console.error('Error saving CloudTalk call data (will be handled by DB trigger):', err.message);
+        // Don't fail - database trigger will handle it as backup
+      }
     }
   } catch (error) {
     console.error('Error in saveRequestToDB:', error.message);
@@ -124,7 +130,12 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
       .select();
     
     if (error) {
-      console.error('Error saving CloudTalk call data:', error.message);
+      // Check if it's a duplicate (trigger might have already inserted)
+      if (error.code === '23505' || error.message.includes('duplicate')) {
+        console.log(`ℹ️  CloudTalk call data already exists (likely inserted by DB trigger): Call ID ${callData.call_id || 'N/A'}`);
+      } else {
+        console.error('Error saving CloudTalk call data:', error.message);
+      }
       // Don't throw - continue processing
     } else {
       console.log(`✅ Saved CloudTalk call data: Call ID ${callData.call_id || 'N/A'}`);
