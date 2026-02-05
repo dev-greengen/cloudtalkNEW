@@ -67,11 +67,70 @@ async function saveRequestToDB(requestData) {
     if (error) {
       console.error('Error saving to database:', error.message);
       // Don't throw - continue processing even if DB save fails
-    } else {
-      console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
+      return;
+    }
+    
+    const webhookId = data?.[0]?.id;
+    console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
+    
+    // If it's a CloudTalk webhook and we have a body, save to cloudtalk_calls table
+    if (isCloudTalk && requestData.body && typeof requestData.body === 'object' && webhookId) {
+      await saveCloudTalkCallData(webhookId, requestData.body);
     }
   } catch (error) {
     console.error('Error in saveRequestToDB:', error.message);
+    // Don't throw - continue processing
+  }
+}
+
+// Function to save CloudTalk call data to separate table
+async function saveCloudTalkCallData(webhookRequestId, body) {
+  try {
+    // Extract all possible fields from CloudTalk webhook body
+    const callData = {
+      webhook_request_id: webhookRequestId,
+      call_id: body.call_id || body.callId || body.id || null,
+      event_type: body.event_type || body.eventType || body.type || null,
+      phone_number: body.phone_number || body.phoneNumber || body.to || body.number || null,
+      phone_number_from: body.phone_number_from || body.phoneNumberFrom || body.from || null,
+      status: body.status || body.call_status || null,
+      duration: body.duration || body.call_duration || null,
+      direction: body.direction || body.call_direction || null,
+      agent_id: body.agent_id || body.agentId || null,
+      agent_name: body.agent_name || body.agentName || null,
+      customer_name: body.customer_name || body.customerName || body.contact_name || body.contactName || null,
+      recording_url: body.recording_url || body.recordingUrl || body.recording || null,
+      transcript: body.transcript || body.transcription || body.text || null,
+      call_start_time: body.call_start_time || body.callStartTime || body.start_time || body.startTime || body.timestamp || body.date || null,
+      call_end_time: body.call_end_time || body.callEndTime || body.end_time || body.endTime || null,
+      call_result: body.call_result || body.callResult || body.result || null,
+      call_outcome: body.call_outcome || body.callOutcome || body.outcome || null,
+      // Extracted data fields (from AI agent)
+      contact_name: body.contact_name || body.contactName || null,
+      company_name: body.company_name || body.companyName || null,
+      ateco_code: body.ateco_code || body.atecoCode || null,
+      ateco_eligible: body.ateco_eligible !== undefined ? body.ateco_eligible : (body.atecoEligible !== undefined ? body.atecoEligible : null),
+      interest_confirmed: body.interest_confirmed !== undefined ? body.interest_confirmed : (body.interestConfirmed !== undefined ? body.interestConfirmed : null),
+      electricity_bill_received: body.electricity_bill_received !== undefined ? body.electricity_bill_received : (body.electricityBillReceived !== undefined ? body.electricityBillReceived : null),
+      annual_consumption_kwh: body.annual_consumption_kwh || body.annualConsumptionKwh || body.consumption || null,
+      should_send: body.should_send !== undefined ? body.should_send : (body.shouldSend !== undefined ? body.shouldSend : null),
+      reason: body.reason || body.message || null,
+      raw_data: body // Store entire body as JSONB for reference
+    };
+    
+    const { data, error } = await supabase
+      .from('cloudtalk_calls')
+      .insert([callData])
+      .select();
+    
+    if (error) {
+      console.error('Error saving CloudTalk call data:', error.message);
+      // Don't throw - continue processing
+    } else {
+      console.log(`✅ Saved CloudTalk call data: Call ID ${callData.call_id || 'N/A'}`);
+    }
+  } catch (error) {
+    console.error('Error in saveCloudTalkCallData:', error.message);
     // Don't throw - continue processing
   }
 }
@@ -308,6 +367,52 @@ app.get('/api/cloudtalk-webhooks', async (req, res) => {
     if (error) throw error;
     
     res.json({ data, count: data.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get CloudTalk calls with extracted data
+app.get('/api/cloudtalk-calls', async (req, res) => {
+  try {
+    const { limit = 100, offset = 0 } = req.query;
+    
+    const { data, error } = await supabase
+      .from('cloudtalk_calls')
+      .select(`
+        *,
+        webhook_request:webhook_requests(*)
+      `)
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (error) throw error;
+    
+    res.json({ data, count: data.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single CloudTalk call by call_id
+app.get('/api/cloudtalk-calls/:callId', async (req, res) => {
+  try {
+    const { callId } = req.params;
+    
+    const { data, error } = await supabase
+      .from('cloudtalk_calls')
+      .select(`
+        *,
+        webhook_request:webhook_requests(*)
+      `)
+      .eq('call_id', callId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error) throw error;
+    
+    res.json({ data });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
