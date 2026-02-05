@@ -915,10 +915,31 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
           dbPhone = '39' + dbPhone;
         }
         
-        // Compare normalized numbers
-        return dbPhone === normalizedPhone || 
-               dbPhone === normalizedPhone.replace(/^39/, '') ||
-               normalizedPhone === dbPhone.replace(/^39/, '');
+        // Normalize WhatsApp phone number (remove country code variations)
+        let whatsappPhone = normalizedPhone.replace(/\D/g, '');
+        if (whatsappPhone.startsWith('+')) {
+          whatsappPhone = whatsappPhone.substring(1);
+        }
+        if (whatsappPhone.length === 10 && !whatsappPhone.startsWith('39')) {
+          whatsappPhone = '39' + whatsappPhone;
+        }
+        
+        // Compare - try both with and without country code
+        const dbPhoneNoCountry = dbPhone.replace(/^39/, '');
+        const whatsappPhoneNoCountry = whatsappPhone.replace(/^39/, '');
+        
+        const matches = (
+          dbPhone === whatsappPhone ||
+          dbPhoneNoCountry === whatsappPhoneNoCountry ||
+          dbPhone === whatsappPhoneNoCountry ||
+          dbPhoneNoCountry === whatsappPhone
+        );
+        
+        if (matches) {
+          console.log(`✅ Phone match: DB="${call.phone_number}" (normalized: ${dbPhone}) === WhatsApp="${fromNumber}" (normalized: ${whatsappPhone})`);
+        }
+        
+        return matches;
       });
       
       if (callsError) {
