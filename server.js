@@ -22,15 +22,9 @@ app.use(express.text({ type: '*/*', limit: '10mb', verify: (req, res, buf) => {
 async function saveRequestToDB(requestData) {
   try {
     // Check if it's a CloudTalk webhook
-    // Also check if body contains CloudTalk data structure (has callId, call_result, etc.)
-    const hasCloudTalkData = requestData.body && typeof requestData.body === 'object' && 
-                            (requestData.body.callId || requestData.body.call_id || requestData.body.call_result || 
-                             requestData.body.data?.callId || requestData.body.data?.call_result);
-    
     const isCloudTalk = requestData.path.includes('cloudtalk') || 
                        requestData.path.includes('webhook') ||
-                       (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk')) ||
-                       hasCloudTalkData;
+                       (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk'));
     
     // Extract CloudTalk-specific data if present
     let cloudtalkData = null;
@@ -98,39 +92,36 @@ async function saveRequestToDB(requestData) {
 // Function to save CloudTalk call data to separate table
 async function saveCloudTalkCallData(webhookRequestId, body) {
   try {
-    // Handle nested data structure (body.data) if present
-    const data = body.data || body;
-    
     // Extract all possible fields from CloudTalk webhook body
     const callData = {
       webhook_request_id: webhookRequestId,
-      call_id: data.call_id || data.callId || data.id || null,
-      event_type: data.event_type || data.eventType || data.type || null,
-      phone_number: data.phone_number || data.phoneNumber || data.to || data.number || data.caller_number || null,
-      phone_number_from: data.phone_number_from || data.phoneNumberFrom || data.from || null,
-      status: data.status || data.call_status || null,
-      duration: data.duration || data.call_duration || null,
-      direction: data.direction || data.call_direction || null,
-      agent_id: data.agent_id || data.agentId || null,
-      agent_name: data.agent_name || data.agentName || null,
-      customer_name: data.customer_name || data.customerName || data.contact_name || data.contactName || null,
-      recording_url: data.recording_url || data.recordingUrl || data.recording || null,
-      transcript: data.transcript || data.transcription || data.text || null,
-      call_start_time: data.call_start_time || data.callStartTime || data.start_time || data.startTime || data.timestamp || data.date || null,
-      call_end_time: data.call_end_time || data.callEndTime || data.end_time || data.endTime || null,
-      call_result: data.call_result || data.callResult || data.result || null,
-      call_outcome: data.call_outcome || data.callOutcome || data.outcome || null,
+      call_id: body.call_id || body.callId || body.id || null,
+      event_type: body.event_type || body.eventType || body.type || null,
+      phone_number: body.phone_number || body.phoneNumber || body.to || body.number || null,
+      phone_number_from: body.phone_number_from || body.phoneNumberFrom || body.from || null,
+      status: body.status || body.call_status || null,
+      duration: body.duration || body.call_duration || null,
+      direction: body.direction || body.call_direction || null,
+      agent_id: body.agent_id || body.agentId || null,
+      agent_name: body.agent_name || body.agentName || null,
+      customer_name: body.customer_name || body.customerName || body.contact_name || body.contactName || null,
+      recording_url: body.recording_url || body.recordingUrl || body.recording || null,
+      transcript: body.transcript || body.transcription || body.text || null,
+      call_start_time: body.call_start_time || body.callStartTime || body.start_time || body.startTime || body.timestamp || body.date || null,
+      call_end_time: body.call_end_time || body.callEndTime || body.end_time || body.endTime || null,
+      call_result: body.call_result || body.callResult || body.result || null,
+      call_outcome: body.call_outcome || body.callOutcome || body.outcome || null,
       // Extracted data fields (from AI agent)
-      contact_name: data.contact_name || data.contactName || null,
-      company_name: data.company_name || data.companyName || null,
-      ateco_code: data.ateco_code || data.atecoCode || null,
-      ateco_eligible: data.ateco_eligible !== undefined ? data.ateco_eligible : (data.atecoEligible !== undefined ? data.atecoEligible : null),
-      interest_confirmed: data.interest_confirmed !== undefined ? data.interest_confirmed : (data.interestConfirmed !== undefined ? data.interestConfirmed : null),
-      electricity_bill_received: data.electricity_bill_received !== undefined ? data.electricity_bill_received : (data.electricityBillReceived !== undefined ? data.electricityBillReceived : null),
-      annual_consumption_kwh: data.annual_consumption_kwh || data.annualConsumptionKwh || data.consumption || null,
-      should_send: data.should_send !== undefined ? data.should_send : (data.shouldSend !== undefined ? data.shouldSend : null),
-      reason: data.reason || data.message || null,
-      raw_data: data // Store the extracted data object as JSONB
+      contact_name: body.contact_name || body.contactName || null,
+      company_name: body.company_name || body.companyName || null,
+      ateco_code: body.ateco_code || body.atecoCode || null,
+      ateco_eligible: body.ateco_eligible !== undefined ? body.ateco_eligible : (body.atecoEligible !== undefined ? body.atecoEligible : null),
+      interest_confirmed: body.interest_confirmed !== undefined ? body.interest_confirmed : (body.interestConfirmed !== undefined ? body.interestConfirmed : null),
+      electricity_bill_received: body.electricity_bill_received !== undefined ? body.electricity_bill_received : (body.electricityBillReceived !== undefined ? body.electricityBillReceived : null),
+      annual_consumption_kwh: body.annual_consumption_kwh || body.annualConsumptionKwh || body.consumption || null,
+      should_send: body.should_send !== undefined ? body.should_send : (body.shouldSend !== undefined ? body.shouldSend : null),
+      reason: body.reason || body.message || null,
+      raw_data: body // Store entire body as JSONB for reference
     };
     
     const { data, error } = await supabase
