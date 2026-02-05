@@ -839,9 +839,12 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
     }
     
-    // Get recent messages from Whapi.Cloud - get more messages to ensure we catch recent ones
-    // Try to get messages from last 24 hours by requesting a larger limit
-    const response = await fetch(`${whatsappUrl}/messages/list?limit=${Math.max(parseInt(limit), 500)}`, {
+    // Get recent messages from Whapi.Cloud
+    // Note: API may have a maximum limit (seems to be 100), so we'll process what we get
+    // and sort by timestamp to get most recent
+    const maxLimit = Math.max(parseInt(limit), 1000);
+    console.log(`📥 Fetching up to ${maxLimit} messages from Whapi.Cloud...`);
+    const response = await fetch(`${whatsappUrl}/messages/list?limit=${maxLimit}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
