@@ -24,11 +24,9 @@ curl https://cloudtalk-new.vercel.app/api/check-whatsapp-replies
 
 Set up a cron job or scheduled task to call the endpoint periodically:
 
-**Using Vercel Cron Jobs:**
-1. Create `vercel.json` cron configuration (if not exists)
-2. Add cron job to call `/api/check-whatsapp-replies` every 5-10 minutes
+**Note:** Vercel's free tier only supports daily cron jobs. For frequent polling, use external services.
 
-**Using External Cron Service:**
+**Using External Cron Service (Recommended):**
 - Use services like:
   - [cron-job.org](https://cron-job.org)
   - [EasyCron](https://www.easycron.com)
