@@ -907,41 +907,37 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
         continue;
       }
       
-      // Normalize and match phone numbers
+      // Normalize and match phone numbers - simplified approach
       const calls = (allCalls || []).filter(call => {
         if (!call.phone_number) return false;
         
-        // Normalize database phone number
-        let dbPhone = call.phone_number.replace(/\D/g, '');
-        if (dbPhone.startsWith('+')) {
-          dbPhone = dbPhone.substring(1);
-        }
-        if (dbPhone.length === 10 && !dbPhone.startsWith('39')) {
-          dbPhone = '39' + dbPhone;
-        }
+        // Normalize both numbers to digits only, then compare last 10 digits
+        const normalizePhone = (phone) => {
+          let normalized = String(phone).replace(/\D/g, ''); // Remove all non-digits
+          // If it starts with +, remove it
+          if (normalized.startsWith('+')) {
+            normalized = normalized.substring(1);
+          }
+          // Return last 10 digits (Italian number) or full number if shorter
+          return normalized.length >= 10 ? normalized.slice(-10) : normalized;
+        };
         
-        // Normalize WhatsApp phone number (remove country code variations)
-        let whatsappPhone = normalizedPhone.replace(/\D/g, '');
-        if (whatsappPhone.startsWith('+')) {
-          whatsappPhone = whatsappPhone.substring(1);
-        }
-        if (whatsappPhone.length === 10 && !whatsappPhone.startsWith('39')) {
-          whatsappPhone = '39' + whatsappPhone;
-        }
+        const dbPhoneNormalized = normalizePhone(call.phone_number);
+        const whatsappPhoneNormalized = normalizePhone(normalizedPhone);
         
-        // Compare - try both with and without country code
-        const dbPhoneNoCountry = dbPhone.replace(/^39/, '');
-        const whatsappPhoneNoCountry = whatsappPhone.replace(/^39/, '');
+        // Also try full number comparison (with country code)
+        const dbPhoneFull = String(call.phone_number).replace(/\D/g, '').replace(/^\+/, '');
+        const whatsappPhoneFull = normalizedPhone.replace(/\D/g, '').replace(/^\+/, '');
         
         const matches = (
-          dbPhone === whatsappPhone ||
-          dbPhoneNoCountry === whatsappPhoneNoCountry ||
-          dbPhone === whatsappPhoneNoCountry ||
-          dbPhoneNoCountry === whatsappPhone
+          dbPhoneNormalized === whatsappPhoneNormalized || // Last 10 digits match
+          dbPhoneFull === whatsappPhoneFull || // Full number match
+          dbPhoneFull.endsWith(whatsappPhoneNormalized) || // DB ends with WhatsApp last 10
+          whatsappPhoneFull.endsWith(dbPhoneNormalized) // WhatsApp ends with DB last 10
         );
         
         if (matches) {
-          console.log(`✅ Phone match: DB="${call.phone_number}" (normalized: ${dbPhone}) === WhatsApp="${fromNumber}" (normalized: ${whatsappPhone})`);
+          console.log(`✅ Phone match found: DB="${call.phone_number}" (last10: ${dbPhoneNormalized}) === WhatsApp="${fromNumber}" (last10: ${whatsappPhoneNormalized})`);
         }
         
         return matches;
