@@ -14,7 +14,9 @@
   ],
   "env": {
     "SUPABASE_URL": "https://pmtpufqtohygciwsdewt.supabase.co",
-    "SUPABASE_KEY": "sb_publishable_9WUXqQA-w5JKRpaojmhZhA_hBApvDsq"
+    "SUPABASE_KEY": "sb_publishable_9WUXqQA-w5JKRpaojmhZhA_hBApvDsq",
+    "WHATSAPP_API_TOKEN": "TJJs7JOsxKdKyqMLKkiovuvVgs2lmfVA",
+    "WHATSAPP_API_URL": "https://gate.whapi.cloud"
   }
 }
 
