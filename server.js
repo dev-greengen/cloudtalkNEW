@@ -97,7 +97,17 @@ async function saveRequestToDB(requestData) {
       try {
         // Handle nested body.data structure - pass the actual data object
         const bodyToProcess = requestData.body.data || requestData.body;
-        await saveCloudTalkCallData(webhookId, bodyToProcess);
+        const callData = await saveCloudTalkCallData(webhookId, bodyToProcess);
+        
+        // Automatically send WhatsApp if phone number is present
+        if (callData && callData.phone_number) {
+          try {
+            await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
+          } catch (whatsappErr) {
+            console.error('Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
+            // Don't fail - trigger will queue it as backup
+          }
+        }
       } catch (err) {
         console.error('Error saving CloudTalk call data (will be handled by DB trigger):', err.message);
         // Don't fail - database trigger will handle it as backup
