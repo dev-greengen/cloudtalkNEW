@@ -117,7 +117,7 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
       webhook_request_id: webhookRequestId,
       call_id: body.call_id || body.callId || body.id || null,
       event_type: body.event_type || body.eventType || body.type || null,
-      phone_number: body.phone_number || body.phoneNumber || body.to || body.number || null,
+      phone_number: body.caller_number || body.phone_number || body.phoneNumber || body.to || body.number || null,
       phone_number_from: body.phone_number_from || body.phoneNumberFrom || body.from || null,
       status: body.status || body.call_status || null,
       duration: body.duration || body.call_duration || null,
