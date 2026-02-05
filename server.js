@@ -839,11 +839,67 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
     }
     
-    // Get recent messages from Whapi.Cloud
-    // Note: API may have a maximum limit (seems to be 100), so we'll process what we get
-    // and sort by timestamp to get most recent
+    // Strategy: Get messages from specific chats we've messaged, not just /messages/list
+    // First, get all cloudtalk_calls with phone numbers that haven't received bills yet
+    const { data: callsWithPhones, error: callsError } = await supabase
+      .from('cloudtalk_calls')
+      .select('id, phone_number, electricity_bill_received')
+      .not('phone_number', 'is', null)
+      .or('electricity_bill_received.is.null,electricity_bill_received.eq.false');
+    
+    if (callsError) {
+      console.error('Error fetching calls:', callsError);
+    }
+    
+    let allIncomingMessages = [];
+    const processedChats = new Set();
+    
+    // For each phone number, try to get messages from that specific chat
+    if (callsWithPhones && callsWithPhones.length > 0) {
+      console.log(`📞 Checking ${callsWithPhones.length} phone numbers for new messages...`);
+      for (const call of callsWithPhones) {
+        if (!call.phone_number) continue;
+        
+        // Normalize phone number to create chat_id
+        let phone = call.phone_number.replace(/\D/g, '');
+        if (phone.startsWith('+')) phone = phone.substring(1);
+        if (phone.length === 10 && !phone.startsWith('39')) {
+          phone = '39' + phone;
+        }
+        
+        const chatId = `${phone}@s.whatsapp.net`;
+        if (processedChats.has(chatId)) continue;
+        processedChats.add(chatId);
+        
+        try {
+          // Get messages from this specific chat
+          const chatResponse = await fetch(`${whatsappUrl}/chats/${chatId}/messages?limit=100`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${whatsappToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (chatResponse.ok) {
+            const chatResult = await chatResponse.json();
+            const chatMessages = chatResult.messages || chatResult.data || [];
+            // Filter to only incoming messages
+            const incoming = chatMessages.filter(msg => !msg.from_me);
+            allIncomingMessages.push(...incoming);
+            if (incoming.length > 0) {
+              console.log(`📥 Found ${incoming.length} incoming messages from chat ${chatId}`);
+            }
+          }
+        } catch (err) {
+          // Chat might not exist or endpoint might not work, continue
+        }
+      }
+    }
+    
+    // Also get general messages list as fallback
     const maxLimit = Math.max(parseInt(limit), 1000);
-    console.log(`📥 Fetching up to ${maxLimit} messages from Whapi.Cloud...`);
+    console.log(`📥 Also fetching up to ${maxLimit} messages from general list...`);
     const response = await fetch(`${whatsappUrl}/messages/list?limit=${maxLimit}`, {
       method: 'GET',
       headers: {
@@ -854,16 +910,31 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     
     const result = await response.json();
     
-    if (!response.ok && allIncomingMessages.length === 0) {
-      return res.status(response.status).json({ 
-        success: false, 
-        error: result.error || result.message || 'Failed to fetch messages',
-        details: result 
-      });
+    // Combine messages from specific chats with general list
+    const generalMessages = response.ok ? ((result.messages || []).filter(msg => !msg.from_me)) : [];
+    allIncomingMessages.push(...generalMessages);
+    
+    // Remove duplicates by message ID
+    const uniqueMessages = [];
+    const seenIds = new Set();
+    for (const msg of allIncomingMessages) {
+      if (msg.id && !seenIds.has(msg.id)) {
+        seenIds.add(msg.id);
+        uniqueMessages.push(msg);
+      } else if (!msg.id) {
+        // If no ID, use timestamp+from as unique key
+        const key = `${msg.timestamp}_${msg.from}`;
+        if (!seenIds.has(key)) {
+          seenIds.add(key);
+          uniqueMessages.push(msg);
+        }
+      }
     }
     
-    // Use unique messages from both sources
-    const messagesToProcess = uniqueMessages.length > 0 ? uniqueMessages : (result.messages || []);
+    console.log(`📥 Total unique incoming messages: ${uniqueMessages.length} (from specific chats: ${allIncomingMessages.length - generalMessages.length}, from general list: ${generalMessages.length})`);
+    
+    // Use unique messages
+    const messagesToProcess = uniqueMessages;
     
     // Filter to only incoming messages (from_me: false)
     // Include text, image, document, and voice messages (could be the bill)
