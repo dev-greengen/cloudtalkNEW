@@ -737,6 +737,119 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
   }
 });
 
+// Polling endpoint to check for new incoming messages and update electricity_bill_received
+app.get('/api/check-whatsapp-replies', async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    
+    if (!whatsappToken) {
+      return res.status(500).json({ error: 'WhatsApp API not configured' });
+    }
+    
+    // Get recent messages from Whapi.Cloud
+    const response = await fetch(`${whatsappUrl}/messages/list?limit=${limit}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ 
+        success: false, 
+        error: result.error || result.message || 'Failed to fetch messages',
+        details: result 
+      });
+    }
+    
+    // Filter to only incoming messages (from_me: false)
+    const incomingMessages = (result.messages || []).filter(msg => 
+      msg.from_me === false && 
+      msg.type === 'text' && 
+      msg.text?.body
+    );
+    
+    let updatedCount = 0;
+    const updates = [];
+    
+    // Process each incoming message
+    for (const message of incomingMessages) {
+      const fromNumber = message.from || message.phone_number;
+      if (!fromNumber) continue;
+      
+      // Normalize phone number
+      let normalizedPhone = fromNumber.replace(/\D/g, '');
+      if (normalizedPhone.startsWith('+')) {
+        normalizedPhone = normalizedPhone.substring(1);
+      }
+      if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+        normalizedPhone = '39' + normalizedPhone;
+      }
+      
+      // Check if we've sent a message to this number
+      const phoneWithoutCountry = normalizedPhone.replace(/^39/, '');
+      const phoneWithPlus = `+${normalizedPhone}`;
+      
+      const { data: calls, error: callsError } = await supabase
+        .from('cloudtalk_calls')
+        .select('id, phone_number, electricity_bill_received')
+        .or(`phone_number.eq.${normalizedPhone},phone_number.eq.${phoneWithPlus},phone_number.eq.39${normalizedPhone},phone_number.eq.${phoneWithoutCountry},phone_number.ilike.%${normalizedPhone}%,phone_number.ilike.%${phoneWithoutCountry}%`);
+      
+      if (callsError) {
+        console.error('Error querying cloudtalk_calls:', callsError);
+        continue;
+      }
+      
+      if (calls && calls.length > 0) {
+        // Filter to only update records where electricity_bill_received is false
+        const callsToUpdate = calls.filter(call => call.electricity_bill_received !== true);
+        
+        if (callsToUpdate.length > 0) {
+          const callIds = callsToUpdate.map(call => call.id);
+          
+          const { error: updateError } = await supabase
+            .from('cloudtalk_calls')
+            .update({ 
+              electricity_bill_received: true,
+              updated_at: new Date().toISOString()
+            })
+            .in('id', callIds);
+          
+          if (!updateError) {
+            updatedCount += callIds.length;
+            updates.push({
+              phone_number: normalizedPhone,
+              message_preview: message.text?.body?.substring(0, 50) || '',
+              calls_updated: callIds.length
+            });
+            console.log(`✅ Updated electricity_bill_received=true for ${callIds.length} call(s) from ${normalizedPhone}`);
+          }
+        }
+      }
+    }
+    
+    res.json({ 
+      success: true,
+      checked: incomingMessages.length,
+      updated: updatedCount,
+      updates: updates,
+      message: `Checked ${incomingMessages.length} incoming messages, updated ${updatedCount} call records`
+    });
+  } catch (error) {
+    console.error('Error checking WhatsApp replies:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 // Get last sent WhatsApp messages from Whapi
 app.get('/api/whatsapp-messages', async (req, res) => {
   try {
