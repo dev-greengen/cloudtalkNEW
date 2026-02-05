@@ -643,6 +643,100 @@ app.post('/api/send-whatsapp', async (req, res) => {
   }
 });
 
+// Webhook endpoint to receive incoming WhatsApp messages from Whapi.Cloud
+app.post('/api/whatsapp-webhook', async (req, res) => {
+  try {
+    const webhookData = req.body;
+    
+    console.log('📥 Incoming WhatsApp webhook:', JSON.stringify(webhookData, null, 2));
+    
+    // Whapi.Cloud webhook structure: { event, data: { from, to, body, ... } }
+    const event = webhookData.event || webhookData.type;
+    const messageData = webhookData.data || webhookData.message || webhookData;
+    
+    // Only process incoming messages (not sent messages)
+    if (event === 'messages' || event === 'message' || (messageData && !messageData.from_me)) {
+      const fromNumber = messageData.from || messageData.phone_number || messageData.number;
+      const messageText = messageData.body?.body || messageData.body || messageData.text || '';
+      
+      if (!fromNumber) {
+        console.log('⚠️  No phone number in incoming message');
+        return res.json({ success: true, message: 'No phone number' });
+      }
+      
+      // Normalize phone number
+      let normalizedPhone = fromNumber.replace(/\D/g, '');
+      if (normalizedPhone.startsWith('+')) {
+        normalizedPhone = normalizedPhone.substring(1);
+      }
+      if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+        normalizedPhone = '39' + normalizedPhone;
+      }
+      
+      console.log(`📨 Message from ${normalizedPhone}: ${messageText.substring(0, 100)}...`);
+      
+      // Check if we've sent a message to this number (check cloudtalk_calls table)
+      const { data: calls, error: callsError } = await supabase
+        .from('cloudtalk_calls')
+        .select('id, phone_number, electricity_bill_received')
+        .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone},phone_number.eq.39${normalizedPhone},phone_number.like.%${normalizedPhone}%`);
+      
+      if (callsError) {
+        console.error('Error querying cloudtalk_calls:', callsError);
+        return res.json({ success: true, message: 'Error querying database' });
+      }
+      
+      if (calls && calls.length > 0) {
+        // Found calls for this number - update electricity_bill_received to true
+        const callIds = calls.map(call => call.id);
+        
+        const { error: updateError } = await supabase
+          .from('cloudtalk_calls')
+          .update({ 
+            electricity_bill_received: true,
+            updated_at: new Date().toISOString()
+          })
+          .in('id', callIds)
+          .eq('electricity_bill_received', false); // Only update if not already true
+        
+        if (updateError) {
+          console.error('Error updating electricity_bill_received:', updateError);
+        } else {
+          console.log(`✅ Updated electricity_bill_received=true for ${callIds.length} call(s) from ${normalizedPhone}`);
+        }
+        
+        // Also save the incoming message to webhook_requests for tracking
+        try {
+          await supabase
+            .from('webhook_requests')
+            .insert([{
+              method: 'POST',
+              path: '/api/whatsapp-webhook',
+              url: req.url,
+              headers: req.headers,
+              body: webhookData,
+              raw_body: JSON.stringify(webhookData),
+              ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+              user_agent: req.get('user-agent') || 'Whapi.Cloud-Webhook',
+              timestamp: new Date().toISOString(),
+              is_cloudtalk: false,
+              created_at: new Date().toISOString()
+            }]);
+        } catch (saveError) {
+          console.error('Error saving webhook:', saveError);
+        }
+      } else {
+        console.log(`ℹ️  Message from ${normalizedPhone} but no matching calls found`);
+      }
+    }
+    
+    res.json({ success: true, message: 'Webhook processed' });
+  } catch (error) {
+    console.error('Error processing WhatsApp webhook:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get last sent WhatsApp messages from Whapi
 app.get('/api/whatsapp-messages', async (req, res) => {
   try {
