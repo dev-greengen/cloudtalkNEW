@@ -551,6 +551,96 @@ app.get('/api/cloudtalk-calls/:callId', async (req, res) => {
   }
 });
 
+// Get last CloudTalk call record with status
+app.get('/api/cloudtalk-calls/last/status', async (req, res) => {
+  try {
+    // Get the last record
+    const { data: lastCall, error: callError } = await supabase
+      .from('cloudtalk_calls')
+      .select(`
+        *,
+        webhook_request:webhook_requests(*)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (callError) throw callError;
+    
+    if (!lastCall) {
+      return res.json({ 
+        message: 'No records found',
+        has_response: false 
+      });
+    }
+    
+    // Check if there's a reply (electricity_bill_received = true)
+    const hasResponse = lastCall.electricity_bill_received === true;
+    
+    // If phone number exists, check recent WhatsApp messages for replies
+    let recentReply = null;
+    if (lastCall.phone_number) {
+      try {
+        const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+        const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+        
+        if (whatsappToken) {
+          // Normalize phone number
+          let normalizedPhone = lastCall.phone_number.replace(/\D/g, '');
+          if (normalizedPhone.startsWith('+')) {
+            normalizedPhone = normalizedPhone.substring(1);
+          }
+          if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+            normalizedPhone = '39' + normalizedPhone;
+          }
+          
+          // Get recent messages
+          const response = await fetch(`${whatsappUrl}/messages/list?limit=50`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${whatsappToken}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            const incomingMessages = (result.messages || []).filter(msg => 
+              msg.from_me === false && 
+              msg.type === 'text' &&
+              (msg.from === normalizedPhone || 
+               msg.from === `+${normalizedPhone}` ||
+               msg.from === `39${normalizedPhone}` ||
+               msg.from.replace(/\D/g, '') === normalizedPhone.replace(/\D/g, ''))
+            );
+            
+            if (incomingMessages.length > 0) {
+              recentReply = {
+                message: incomingMessages[0].text?.body || '',
+                timestamp: incomingMessages[0].timestamp,
+                from: incomingMessages[0].from
+              };
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error checking WhatsApp messages:', err);
+      }
+    }
+    
+    res.json({
+      last_record: lastCall,
+      has_response: hasResponse,
+      electricity_bill_received: lastCall.electricity_bill_received,
+      phone_number: lastCall.phone_number,
+      recent_reply: recentReply,
+      status: hasResponse ? 'Client has replied' : 'Waiting for reply'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // WhatsApp sending endpoint (called by database trigger or queue processor)
 app.post('/api/send-whatsapp', async (req, res) => {
   try {
