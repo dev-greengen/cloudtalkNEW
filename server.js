@@ -294,10 +294,52 @@ Grazie e buona giornata.`;
     console.log(`📤 Auto-sending WhatsApp to ${normalizedPhone} (original: ${phoneNumber})`);
     
     // Send WhatsApp message via Wasender API
-    // Wasender endpoint for sending messages - adjust if different
-    // Common patterns: /api/send, /send, /api/send-message, /messages/send, /messages/text
-    // Try /api/send first, fallback to /messages/text if needed
-    const sendEndpoint = `${whatsappUrl}/api/send`;
+    // Wasender endpoint for sending messages - try multiple possible endpoints
+    const possibleSendEndpoints = [
+      `${whatsappUrl}/api/send`,
+      `${whatsappUrl}/send`,
+      `${whatsappUrl}/api/send-message`,
+      `${whatsappUrl}/messages/send`,
+      `${whatsappUrl}/messages/text`
+    ];
+    
+    let sendEndpoint = possibleSendEndpoints[0]; // Default to first
+    let response;
+    let lastSendError;
+    
+    // Try each endpoint until one works
+    for (const endpoint of possibleSendEndpoints) {
+      console.log(`📤 Trying to send via: ${endpoint}`);
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${whatsappToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            to: normalizedPhone,
+            body: message
+          }),
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
+        
+        console.log(`✅ Got response from ${endpoint}, status: ${response.status}`);
+        sendEndpoint = endpoint; // Use this endpoint
+        break; // Success, exit loop
+      } catch (fetchErr) {
+        console.log(`❌ Send failed for ${endpoint}:`, fetchErr.message);
+        lastSendError = fetchErr;
+        // Continue to next endpoint
+        continue;
+      }
+    }
+    
+    // If all endpoints failed, throw error
+    if (!response) {
+      console.error('❌ All send endpoints failed');
+      throw lastSendError || new Error('All Wasender send endpoints failed');
+    }
     const response = await fetch(sendEndpoint, {
       method: 'POST',
       headers: {
