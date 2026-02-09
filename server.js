@@ -295,12 +295,16 @@ Grazie e buona giornata.`;
     
     // Send WhatsApp message via Wasender API
     // Wasender endpoint for sending messages - try multiple possible endpoints
+    // If URL already ends with /api, don't add it again
+    const baseUrl = whatsappUrl.endsWith('/api') ? whatsappUrl : whatsappUrl;
+    const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
+    
     const possibleSendEndpoints = [
-      `${whatsappUrl}/api/send`,
-      `${whatsappUrl}/send`,
-      `${whatsappUrl}/api/send-message`,
-      `${whatsappUrl}/messages/send`,
-      `${whatsappUrl}/messages/text`
+      `${baseUrl}${apiPrefix}/send`,
+      `${baseUrl}/send`,
+      `${baseUrl}${apiPrefix}/send-message`,
+      `${baseUrl}/messages/send`,
+      `${baseUrl}/messages/text`
     ];
     
     let sendEndpoint = possibleSendEndpoints[0]; // Default to first
