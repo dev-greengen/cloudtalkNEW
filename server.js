@@ -89,9 +89,9 @@ async function saveRequestToDB(requestData) {
     let data, error;
     try {
       const result = await supabase
-        .from('webhook_requests')
-        .insert([dbRecord])
-        .select();
+      .from('webhook_requests')
+      .insert([dbRecord])
+      .select();
       data = result.data;
       error = result.error;
     } catch (fetchError) {
@@ -316,14 +316,14 @@ Grazie e buona giornata.`;
       console.log(`📤 Trying to send via: ${endpoint}`);
       try {
         response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${whatsappToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            to: normalizedPhone,
-            body: message
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: normalizedPhone,
+        body: message
           }),
           signal: AbortSignal.timeout(10000) // 10 second timeout
         });
@@ -1757,10 +1757,10 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
           
           const { error: updateError } = await supabase
             .from('cloudtalk_calls')
-          .update({ 
+            .update({ 
             electricity_bill_received: true
-          })
-          .in('id', callIds);
+            })
+            .in('id', callIds);
           
           if (!updateError) {
             updatedCount += callIds.length;
@@ -1807,16 +1807,20 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
     // Only try API if both token and URL are provided and URL is not empty
     if (whatsappToken && whatsappUrl && whatsappUrl.trim() !== '') {
       try {
-        // Wasender API endpoint for getting messages - adjust if different
-        // Common patterns: /api/messages, /messages, /api/get-messages
+        // Wasender API endpoint for getting messages
+        // Note: /api/messages supports PUT, not GET
+        // Try different endpoints that might support GET
         // If URL already ends with /api, don't add it again
         const baseUrl = whatsappUrl.endsWith('/api') ? whatsappUrl : whatsappUrl;
         const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
         
+        // Try endpoints that might support GET for retrieving messages
         const possibleEndpoints = [
-          `${baseUrl}${apiPrefix}/messages?limit=${limit}`,
-          `${baseUrl}/messages?limit=${limit}`,
-          `${baseUrl}${apiPrefix}/get-messages?limit=${limit}`
+          `${baseUrl}/messages?limit=${limit}`,  // Try without /api prefix
+          `${baseUrl}${apiPrefix}/get-messages?limit=${limit}`,
+          `${baseUrl}${apiPrefix}/messages/incoming?limit=${limit}`,
+          `${baseUrl}${apiPrefix}/sessions/messages?limit=${limit}`,
+          // Skip /api/messages since it only supports PUT
         ];
         
         let response;
@@ -1828,10 +1832,10 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
           console.log(`🔑 Using token: ${whatsappToken ? whatsappToken.substring(0, 20) + '...' : 'NOT SET'}`);
           try {
             response = await fetch(messagesEndpoint, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${whatsappToken}`,
-                'Content-Type': 'application/json'
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
               },
               signal: AbortSignal.timeout(10000) // 10 second timeout
             });
