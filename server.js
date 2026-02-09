@@ -21,10 +21,14 @@ app.use(express.text({ type: '*/*', limit: '10mb', verify: (req, res, buf) => {
 // Function to save request to Supabase
 async function saveRequestToDB(requestData) {
   try {
+    console.log(`💾 Attempting to save request: ${requestData.method} ${requestData.path}`);
+    
     // Check if it's a CloudTalk webhook by path/user-agent first
     let isCloudTalk = requestData.path.includes('cloudtalk') || 
                       requestData.path.includes('webhook') ||
                       (requestData.headers['user-agent'] && requestData.headers['user-agent'].includes('cloudtalk'));
+    
+    console.log(`🔍 Initial isCloudTalk check: ${isCloudTalk} (path: ${requestData.path}, user-agent: ${requestData.headers['user-agent']?.substring(0, 50) || 'none'})`);
     
     // Also check body structure for CloudTalk-specific fields (handles nested body.data)
     if (requestData.body && typeof requestData.body === 'object') {
@@ -39,7 +43,12 @@ async function saveRequestToDB(requestData) {
       
       if (hasCloudTalkFields) {
         isCloudTalk = true;
+        console.log(`✅ Detected CloudTalk webhook by body fields`);
+      } else {
+        console.log(`ℹ️  Body does not contain CloudTalk fields. Body keys: ${Object.keys(bodyData).join(', ')}`);
       }
+    } else {
+      console.log(`ℹ️  Body is not an object or is null`);
     }
     
     // Extract CloudTalk-specific data if present
@@ -82,36 +91,59 @@ async function saveRequestToDB(requestData) {
       .select();
     
     if (error) {
-      console.error('Error saving to database:', error.message);
+      console.error('❌ Error saving to database:', error.message);
+      console.error('❌ Error details:', JSON.stringify(error, null, 2));
       // Don't throw - continue processing even if DB save fails
       return;
     }
     
     const webhookId = data?.[0]?.id;
-    console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''}`);
+    console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''} - ID: ${webhookId}`);
     
     // If it's a CloudTalk webhook and we have a body, save to cloudtalk_calls table
     // Note: Database trigger also handles this automatically, but we do it here too for immediate processing
     // The trigger will handle nested body.data structure, so we pass the full body
+    console.log(`🔍 Checking CloudTalk processing: isCloudTalk=${isCloudTalk}, hasBody=${!!requestData.body}, isObject=${typeof requestData.body === 'object'}, webhookId=${webhookId}`);
+    
     if (isCloudTalk && requestData.body && typeof requestData.body === 'object' && webhookId) {
+      console.log(`📞 Processing CloudTalk webhook...`);
       try {
         // Handle nested body.data structure - pass the actual data object
         const bodyToProcess = requestData.body.data || requestData.body;
+        console.log(`📋 Processing body data. Keys: ${Object.keys(bodyToProcess).join(', ')}`);
         const callData = await saveCloudTalkCallData(webhookId, bodyToProcess);
         
-        // Automatically send WhatsApp if phone number is present
-        if (callData && callData.phone_number) {
-          try {
-            await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
-          } catch (whatsappErr) {
-            console.error('Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
-            // Don't fail - trigger will queue it as backup
+        if (callData) {
+          console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}`);
+          
+          // Automatically send WhatsApp if phone number is present
+          if (callData.phone_number) {
+            console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}...`);
+            try {
+              const result = await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
+              if (result.success) {
+                console.log(`✅ WhatsApp sent successfully to ${callData.phone_number}`);
+              } else {
+                console.error(`❌ WhatsApp send failed: ${result.error}`);
+              }
+            } catch (whatsappErr) {
+              console.error('❌ Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
+              console.error('❌ Error stack:', whatsappErr.stack);
+              // Don't fail - trigger will queue it as backup
+            }
+          } else {
+            console.log(`⚠️  No phone number found in call data. Cannot send WhatsApp.`);
           }
+        } else {
+          console.log(`⚠️  saveCloudTalkCallData returned null - call data not saved`);
         }
       } catch (err) {
-        console.error('Error saving CloudTalk call data (will be handled by DB trigger):', err.message);
+        console.error('❌ Error saving CloudTalk call data (will be handled by DB trigger):', err.message);
+        console.error('❌ Error stack:', err.stack);
         // Don't fail - database trigger will handle it as backup
       }
+    } else {
+      console.log(`ℹ️  Skipping CloudTalk processing: isCloudTalk=${isCloudTalk}, hasBody=${!!requestData.body}, isObject=${typeof requestData.body === 'object'}, webhookId=${webhookId}`);
     }
   } catch (error) {
     console.error('Error in saveRequestToDB:', error.message);
@@ -154,6 +186,8 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
       raw_data: body // Store entire body as JSONB for reference
     };
     
+    console.log(`💾 Attempting to insert CloudTalk call data. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}`);
+    
     const { data, error } = await supabase
       .from('cloudtalk_calls')
       .insert([callData])
@@ -163,12 +197,25 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
       // Check if it's a duplicate (trigger might have already inserted)
       if (error.code === '23505' || error.message.includes('duplicate')) {
         console.log(`ℹ️  CloudTalk call data already exists (likely inserted by DB trigger): Call ID ${callData.call_id || 'N/A'}`);
+        // Try to fetch the existing record
+        const { data: existing } = await supabase
+          .from('cloudtalk_calls')
+          .select('*')
+          .eq('webhook_request_id', webhookRequestId)
+          .limit(1)
+          .single();
+        if (existing) {
+          console.log(`✅ Found existing CloudTalk call record, returning it`);
+          return existing;
+        }
       } else {
-        console.error('Error saving CloudTalk call data:', error.message);
+        console.error('❌ Error saving CloudTalk call data:', error.message);
+        console.error('❌ Error code:', error.code);
+        console.error('❌ Error details:', JSON.stringify(error, null, 2));
       }
       // Don't throw - continue processing
     } else {
-      console.log(`✅ Saved CloudTalk call data: Call ID ${callData.call_id || 'N/A'}`);
+      console.log(`✅ Saved CloudTalk call data: Call ID ${callData.call_id || 'N/A'}, Phone: ${callData.phone_number || 'N/A'}`);
       return callData; // Return call data for further processing
     }
     return null;
@@ -749,8 +796,14 @@ app.use(async (req, res, next) => {
   
   // Save to database ONLY for POST requests (async, don't wait)
   if (req.method === 'POST') {
+    console.log(`📥 POST request received: ${req.path}`);
+    console.log(`📋 Body type: ${typeof req.body}, is object: ${typeof req.body === 'object'}`);
+    if (req.body && typeof req.body === 'object') {
+      console.log(`📋 Body keys: ${Object.keys(req.body).join(', ')}`);
+    }
     saveRequestToDB(requestData).catch(err => {
-      console.error('Failed to save request to DB:', err.message);
+      console.error('❌ Failed to save request to DB:', err.message);
+      console.error('❌ Error stack:', err.stack);
     });
   }
   
