@@ -239,6 +239,39 @@ Grazie e buona giornata.`;
     if (response.ok) {
       console.log(`✅ WhatsApp sent successfully to ${normalizedPhone}`);
       
+      // Save sent message to database for monitoring
+      try {
+        await supabase
+          .from('webhook_requests')
+          .insert([{
+            method: 'POST',
+            path: '/api/send-whatsapp',
+            url: '/api/send-whatsapp',
+            headers: {},
+            query: {},
+            body: {
+              from_me: true,
+              to: normalizedPhone,
+              phone_number: normalizedPhone,
+              text: message,
+              body: message,
+              type: 'text',
+              timestamp: Math.floor(Date.now() / 1000),
+              message: { body: message, to: normalizedPhone }
+            },
+            raw_body: JSON.stringify({ to: normalizedPhone, body: message }),
+            ip_address: 'system',
+            user_agent: 'WhatsApp-Sender',
+            timestamp: new Date().toISOString(),
+            is_cloudtalk: false,
+            created_at: new Date().toISOString()
+          }]);
+        console.log(`✅ Saved sent message to database for ${normalizedPhone}`);
+      } catch (dbErr) {
+        console.error('Error saving sent message to database:', dbErr.message);
+        // Don't fail - continue
+      }
+      
       // Update queue status if exists
       if (webhookRequestId) {
         try {
@@ -372,6 +405,14 @@ app.get('/monitor', async (req, res) => {
       background: #e8f5e9;
       border-left-color: #4caf50;
       animation: highlight 0.5s ease;
+    }
+    .message.sent {
+      background: #e3f2fd;
+      border-left-color: #2196F3;
+    }
+    .message.sent.new {
+      background: #bbdefb;
+      border-left-color: #1976D2;
     }
     @keyframes slideIn {
       from { opacity: 0; transform: translateX(-20px); }
@@ -595,7 +636,7 @@ app.get('/monitor', async (req, res) => {
       
       let html = '';
       messages.forEach(msg => {
-        const msgId = msg.id || (msg.timestamp + '-' + msg.from);
+        const msgId = msg.id || (msg.timestamp + '-' + (msg.from || msg.phone_number));
         const isNew = msg.id ? !messageIds.has(msg.id) : true;
         if (msg.id) {
           messageIds.add(msg.id);
@@ -604,12 +645,16 @@ app.get('/monitor', async (req, res) => {
         const text = msg.text || '(messaggio non testuale)';
         const time = msg.timestamp_readable || 'N/A';
         const type = msg.type || 'text';
+        const isSent = msg.from_me === true;
+        const messageClass = 'message ' + (isNew ? 'new' : '') + (isSent ? ' sent' : '');
+        const phoneLabel = isSent ? '📤 Inviato a' : '📞 Da';
         
-        html += '<div class="message ' + (isNew ? 'new' : '') + '" data-id="' + msgId + '">' +
+        html += '<div class="' + messageClass + '" data-id="' + msgId + '">' +
           '<div class="message-header">' +
             '<div>' +
-              '<span class="message-phone">📞 ' + phone + '</span>' +
+              '<span class="message-phone">' + phoneLabel + ' ' + phone + '</span>' +
               '<span class="message-type">' + type + '</span>' +
+              (isSent ? '<span style="background: #2196F3; color: white; padding: 4px 12px; border-radius: 12px; font-size: 0.8em; margin-left: 10px;">Inviato</span>' : '') +
             '</div>' +
             '<div class="message-time">' + time + '</div>' +
           '</div>' +
@@ -1107,6 +1152,39 @@ app.post('/api/send-whatsapp', async (req, res) => {
     
     if (response.ok) {
       console.log(`✅ WhatsApp sent successfully to ${normalizedPhone}`);
+      
+      // Save sent message to database for monitoring
+      try {
+        await supabase
+          .from('webhook_requests')
+          .insert([{
+            method: 'POST',
+            path: '/api/send-whatsapp',
+            url: '/api/send-whatsapp',
+            headers: {},
+            query: {},
+            body: {
+              from_me: true,
+              to: normalizedPhone,
+              phone_number: normalizedPhone,
+              text: message,
+              body: message,
+              type: 'text',
+              timestamp: Math.floor(Date.now() / 1000),
+              message: { body: message, to: normalizedPhone }
+            },
+            raw_body: JSON.stringify({ to: normalizedPhone, body: message }),
+            ip_address: 'system',
+            user_agent: 'WhatsApp-Sender',
+            timestamp: new Date().toISOString(),
+            is_cloudtalk: false,
+            created_at: new Date().toISOString()
+          }]);
+        console.log(`✅ Saved sent message to database for ${normalizedPhone}`);
+      } catch (dbErr) {
+        console.error('Error saving sent message to database:', dbErr.message);
+        // Don't fail - continue
+      }
       
       // Update queue status if webhook_request_id is provided
       if (webhook_request_id) {
@@ -1639,18 +1717,17 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
     }
     
     // Always fallback to database (if API didn't succeed or wasn't tried)
-    
-    // Always fallback to database (if API didn't succeed or wasn't tried)
     try {
       let webhooks = [];
       let dbError = null;
       
       try {
         console.log('📊 Querying database for webhooks...');
+        // Get both incoming webhooks and sent messages
         const queryBuilder = supabase
           .from('webhook_requests')
           .select('*')
-          .eq('path', '/api/whatsapp-webhook')
+          .or('path.eq./api/whatsapp-webhook,path.eq./api/send-whatsapp')
           .order('created_at', { ascending: false })
           .limit(parseInt(limit));
         
@@ -1681,8 +1758,21 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
         try {
           const body = typeof wh.body === 'string' ? JSON.parse(wh.body) : wh.body;
           const data = body.data || body.message || body;
-          const from = data.from || data.phone_number || data.number || '';
-          const messageText = data.body?.body || data.body || data.text || '';
+          
+          // Handle sent messages (from /api/send-whatsapp)
+          const isSent = wh.path === '/api/send-whatsapp' || data.from_me === true;
+          
+          let from, messageText;
+          if (isSent) {
+            // Sent message - use 'to' field
+            from = data.to || data.phone_number || '';
+            messageText = data.text || data.body || '';
+          } else {
+            // Incoming message - use 'from' field
+            from = data.from || data.phone_number || data.number || '';
+            messageText = data.body?.body || data.body || data.text || '';
+          }
+          
           const timestamp = wh.created_at ? Math.floor(new Date(wh.created_at).getTime() / 1000) : null;
           
           // Normalize phone number for filtering
@@ -1698,6 +1788,7 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
             timestamp_readable: wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : null,
             chat_id: data.chat_id || null,
             message: data,
+            from_me: isSent,
             _normalizedPhone: normalizedFrom // For filtering
           };
         } catch (parseError) {
