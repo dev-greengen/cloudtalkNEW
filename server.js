@@ -253,13 +253,21 @@ async function sendWhatsAppMessage(phoneNumber, webhookRequestId, callId) {
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
     const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
+    console.log('🔧 WhatsApp API Configuration Check:');
+    console.log('🔧 WHATSAPP_API_TOKEN:', whatsappToken ? whatsappToken.substring(0, 20) + '...' : 'NOT SET');
+    console.log('🔧 WHATSAPP_API_URL:', whatsappUrl || 'NOT SET');
+    console.log('🔧 WHATSAPP_API_URL type:', typeof whatsappUrl);
+    console.log('🔧 WHATSAPP_API_URL length:', whatsappUrl ? whatsappUrl.length : 0);
+    
     if (!whatsappToken) {
-      console.error('WHATSAPP_API_TOKEN not configured');
+      console.error('❌ WHATSAPP_API_TOKEN not configured');
       return { success: false, error: 'WhatsApp API not configured' };
     }
     
-    if (!whatsappUrl) {
-      console.error('WHATSAPP_API_URL not configured');
+    if (!whatsappUrl || whatsappUrl.trim() === '') {
+      console.error('❌ WHATSAPP_API_URL not configured or empty');
+      console.error('❌ Current value:', JSON.stringify(whatsappUrl));
+      console.error('❌ All env vars starting with WHATSAPP:', Object.keys(process.env).filter(k => k.startsWith('WHATSAPP')));
       return { success: false, error: 'WhatsApp API URL not configured' };
     }
     
