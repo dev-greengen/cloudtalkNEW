@@ -1,0 +1,94 @@
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+dotenv.config();
+
+const supabaseUrl = process.env.SUPABASE_URL || 'https://pmtpufqtohygciwsdewt.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_9WUXqQA-w5JKRpaojmhZhA_hBApvDsq';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+const limit = parseInt(process.argv[2]) || 5;
+
+console.log(`📥 Recuperando gli ultimi ${limit} messaggi WhatsApp ricevuti...\n`);
+
+try {
+  const { data: webhooks, error: webhookError } = await supabase
+    .from('webhook_requests')
+    .select('*')
+    .eq('path', '/api/whatsapp-webhook')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  
+  if (webhookError) {
+    console.error('❌ Errore:', webhookError.message);
+    process.exit(1);
+  }
+  
+  if (!webhooks || webhooks.length === 0) {
+    console.log('📭 Nessun messaggio WhatsApp trovato nel database');
+    process.exit(0);
+  }
+  
+  console.log(`✅ Trovati ${webhooks.length} messaggio/i\n`);
+  
+  webhooks.forEach((wh, index) => {
+    console.log(`\n${'═'.repeat(80)}`);
+    console.log(`📨 MESSAGGIO ${index + 1}`);
+    
+    try {
+      const body = typeof wh.body === 'string' ? JSON.parse(wh.body) : wh.body;
+      const msg = body.data?.messages || body.messages;
+      
+      if (!msg) {
+        console.log(`📅 Data: ${wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : 'N/A'}`);
+        console.log(`⚠️  Struttura messaggio non riconosciuta`);
+        return;
+      }
+      
+      const phone = msg.key?.senderPn || msg.key?.cleanedSenderPn || msg.from || 'Sconosciuto';
+      const phoneClean = String(phone).replace('@s.whatsapp.net', '').replace('@c.us', '');
+      const timestamp = wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : 'N/A';
+      
+      // Estrai testo in base al tipo di messaggio
+      let text = '';
+      let type = 'text';
+      
+      if (msg.message?.conversation) {
+        text = msg.message.conversation;
+        type = 'text';
+      } else if (msg.message?.extendedTextMessage?.text) {
+        text = msg.message.extendedTextMessage.text;
+        type = 'text (extended)';
+      } else if (msg.message?.audioMessage) {
+        text = '🎤 Messaggio vocale';
+        type = 'audio';
+      } else if (msg.message?.imageMessage) {
+        text = '🖼️ Immagine';
+        type = 'image';
+      } else if (msg.message?.videoMessage) {
+        text = '🎥 Video';
+        type = 'video';
+      } else if (msg.message?.documentMessage) {
+        text = '📄 Documento';
+        type = 'document';
+      } else {
+        text = '(tipo messaggio non supportato)';
+        type = 'unknown';
+      }
+      
+      console.log(`📞 Da: ${phoneClean}`);
+      console.log(`📅 Data: ${timestamp}`);
+      console.log(`📝 Tipo: ${type}`);
+      console.log(`💬 Testo: ${text}`);
+      
+    } catch (parseError) {
+      console.log(`📅 Data: ${wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : 'N/A'}`);
+      console.log(`⚠️  Errore parsing: ${parseError.message}`);
+    }
+    
+    console.log('─'.repeat(80));
+  });
+  
+} catch (error) {
+  console.error('❌ Errore:', error.message);
+  process.exit(1);
+}

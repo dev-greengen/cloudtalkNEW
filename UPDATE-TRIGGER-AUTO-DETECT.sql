@@ -295,3 +295,4 @@ $$ LANGUAGE plpgsql;
 
 COMMENT ON FUNCTION auto_insert_cloudtalk_call() IS 'Automatically detects and extracts CloudTalk call data from webhook_requests, handling both nested body.data and direct body structures';
 
+

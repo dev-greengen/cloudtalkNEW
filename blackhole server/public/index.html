@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Blackhole Chat</title>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #00ff00;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      background: #1a1a1a;
+      padding: 15px;
+      border-bottom: 2px solid #00ff00;
+    }
+    .chat-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      background: #0a0a0a;
+    }
+    .message {
+      margin: 10px 0;
+      padding: 10px;
+      background: #1a1a1a;
+      border-left: 3px solid #00ff00;
+      border-radius: 3px;
+    }
+    .message-header {
+      color: #00ff00;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .message-text {
+      color: #ffffff;
+      word-wrap: break-word;
+    }
+    .message-time {
+      color: #666;
+      font-size: 0.8em;
+    }
+    .audio-message {
+      border-left-color: #ff00ff;
+    }
+    .audio-player {
+      margin-top: 10px;
+      width: 100%;
+    }
+    .input-area {
+      background: #1a1a1a;
+      padding: 15px;
+      border-top: 2px solid #00ff00;
+      display: flex;
+      gap: 10px;
+    }
+    input[type="text"] {
+      flex: 1;
+      background: #0a0a0a;
+      border: 1px solid #00ff00;
+      color: #00ff00;
+      padding: 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #00ff88;
+    }
+    button {
+      background: #00ff00;
+      color: #0a0a0a;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      font-family: 'Courier New', monospace;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #00ff88;
+    }
+    .status {
+      color: #666;
+      font-size: 0.9em;
+      margin-bottom: 10px;
+    }
+    .connected { color: #00ff00; }
+    .disconnected { color: #ff0000; }
+    .recording {
+      background: #ff0000 !important;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .mic-status {
+      color: #666;
+      font-size: 0.8em;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>BLACKHOLE CHAT</h1>
+    <div class="status" id="status">Connecting...</div>
+    <div class="mic-status" id="micStatus">Microphone: Not initialized</div>
+  </div>
+  
+  <div class="chat-container" id="chat">
+    <div class="message">
+      <div class="message-header">System</div>
+      <div class="message-text">Connecting to Blackhole Server...</div>
+    </div>
+  </div>
+  
+  <div class="input-area">
+    <input type="text" id="messageInput" placeholder="Type your message..." />
+    <input type="file" id="audioInput" accept="audio/*" style="display: none;" />
+    <button onclick="document.getElementById('audioInput').click()">📁 File</button>
+    <button id="sendButton" onclick="sendMessage()">Send</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const chat = document.getElementById('chat');
+    const messageInput = document.getElementById('messageInput');
+    const audioInput = document.getElementById('audioInput');
+    const status = document.getElementById('status');
+    const micStatus = document.getElementById('micStatus');
+    const sendButton = document.getElementById('sendButton');
+    
+    let username = prompt('Enter your name:') || 'Anonymous';
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let stream = null;
+    
+    // Initialize microphone
+    async function initMicrophone() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 44100
+          } 
+        });
+        micStatus.textContent = 'Microphone: Ready 🎤';
+        micStatus.style.color = '#00ff00';
+        console.log('Microphone initialized, stream tracks:', stream.getAudioTracks().length);
+      } catch (err) {
+        micStatus.textContent = 'Microphone: Access denied or not available';
+        micStatus.style.color = '#ff0000';
+        console.error('Microphone access error:', err);
+      }
+    }
+    
+    // Record audio from microphone
+    async function recordAudio(duration = 3000) {
+      if (!stream) {
+        await initMicrophone();
+        if (!stream) {
+          console.error('No microphone stream available');
+          return null;
+        }
+      }
+      
+      // Determine best mime type
+      let mimeType = 'audio/webm';
+      const types = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4'
+      ];
+      
+      for (const type of types) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          break;
+        }
+      }
+      
+      console.log('Recording with mimeType:', mimeType);
+      
+      return new Promise((resolve) => {
+        try {
+          mediaRecorder = new MediaRecorder(stream, { mimeType });
+          
+          audioChunks = [];
+          let isResolved = false;
+          
+          const doResolve = (blob) => {
+            if (!isResolved) {
+              isResolved = true;
+              resolve(blob);
+            }
+          };
+          
+          mediaRecorder.ondataavailable = (event) => {
+            console.log('Data available:', event.data.size, 'bytes');
+            if (event.data && event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+          
+          mediaRecorder.onstop = () => {
+            console.log('Recording stopped. Chunks:', audioChunks.length);
+            
+            // Wait a bit to ensure all data is available
+            setTimeout(() => {
+              if (audioChunks.length > 0) {
+                const totalSize = audioChunks.reduce((sum, chunk) => sum + chunk.size, 0);
+                console.log('Total chunks size:', totalSize, 'bytes');
+                
+                const audioBlob = new Blob(audioChunks, { type: mimeType });
+                console.log('Audio blob created:', audioBlob.size, 'bytes, type:', audioBlob.type);
+                
+                if (audioBlob.size > 500) { // Only resolve if we have meaningful data (at least 500 bytes)
+                  doResolve(audioBlob);
+                } else {
+                  console.warn('Audio blob too small:', audioBlob.size, 'bytes - might be empty or incomplete');
+                  doResolve(null);
+                }
+              } else {
+                console.warn('No audio chunks collected');
+                doResolve(null);
+              }
+            }, 200); // Wait 200ms for all data
+          };
+          
+          mediaRecorder.onerror = (event) => {
+            console.error('MediaRecorder error:', event.error);
+            doResolve(null);
+          };
+          
+          // Start recording - request data every 250ms
+          mediaRecorder.start(250);
+          sendButton.classList.add('recording');
+          sendButton.textContent = 'Recording...';
+          
+          console.log('Recording started for', duration, 'ms');
+          
+          setTimeout(() => {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+              console.log('Stopping recorder...');
+              // Request final data chunk before stopping
+              try {
+                mediaRecorder.requestData();
+              } catch (e) {
+                console.warn('Could not request data:', e);
+              }
+              
+              // Small delay then stop
+              setTimeout(() => {
+                if (mediaRecorder.state === 'recording') {
+                  mediaRecorder.stop();
+                }
+              }, 100);
+            } else {
+              console.warn('Recorder not in recording state:', mediaRecorder?.state);
+              doResolve(null);
+            }
+          }, duration);
+        } catch (err) {
+          console.error('Recording error:', err);
+          resolve(null);
+        }
+      });
+    }
+    
+    socket.on('connect', () => {
+      status.textContent = 'Connected';
+      status.className = 'status connected';
+      addMessage('System', 'Connected to Blackhole Server', 'system');
+      initMicrophone();
+    });
+    
+    socket.on('disconnect', () => {
+      status.textContent = 'Disconnected';
+      status.className = 'status disconnected';
+    });
+    
+    socket.on('chat-message', (data) => {
+      addMessage(data.user, data.text, 'text');
+    });
+    
+    socket.on('audio-message', (data) => {
+      console.log('Audio message received via socket:', data);
+      if (data.text) {
+        // Show text message with audio
+        addMessage(data.user, data.text, 'text');
+        addAudioMessage(data.user, data.audioUrl, data.filename || 'Voice message');
+      } else {
+        addAudioMessage(data.user, data.audioUrl, data.filename);
+      }
+    });
+    
+    function addMessage(user, text, type) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message';
+      messageDiv.innerHTML = `
+        <div class="message-header">${user}</div>
+        <div class="message-text">${text}</div>
+        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+      `;
+      chat.appendChild(messageDiv);
+      chat.scrollTop = chat.scrollHeight;
+    }
+    
+    function addAudioMessage(user, audioUrl, filename) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message audio-message';
+      
+      // Make sure audioUrl is a full URL if it's relative
+      const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${window.location.origin}${audioUrl}`;
+      
+      messageDiv.innerHTML = `
+        <div class="message-header">${user} 📢</div>
+        <div class="message-text">${filename}</div>
+        <audio controls class="audio-player" preload="auto">
+          <source src="${fullAudioUrl}" type="audio/webm">
+          Your browser does not support the audio element.
+        </audio>
+        <div class="message-time">${new Date().toLocaleTimeString()}</div>
+      `;
+      chat.appendChild(messageDiv);
+      chat.scrollTop = chat.scrollHeight;
+      
+      // Log for debugging
+      console.log('Audio message added:', { user, audioUrl: fullAudioUrl, filename });
+    }
+    
+    async function sendMessage() {
+      const text = messageInput.value.trim();
+      if (!text) return;
+      
+      // Disable button during recording
+      sendButton.disabled = true;
+      sendButton.textContent = 'Recording...';
+      
+      try {
+        // Record audio from microphone (3 seconds)
+        const audioBlob = await recordAudio(3000);
+        
+        // Send audio if recorded successfully
+        if (audioBlob && audioBlob.size > 0) {
+          console.log('Audio recorded, size:', audioBlob.size, 'type:', audioBlob.type);
+          
+          const formData = new FormData();
+          const audioFile = new File([audioBlob], `voice-${Date.now()}.webm`, { 
+            type: audioBlob.type || 'audio/webm' 
+          });
+          formData.append('audio', audioFile);
+          formData.append('user', username);
+          formData.append('text', text);
+          
+          const response = await fetch('/upload-audio', {
+            method: 'POST',
+            body: formData
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Upload failed: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          if (data.success) {
+            console.log('Voice message sent successfully:', data.audioUrl);
+            // The socket.io event will handle displaying it to all clients
+          } else {
+            console.error('Upload failed:', data.error);
+            addMessage('System', 'Failed to send voice message', 'system');
+            // Send text message as fallback
+            socket.emit('chat-message', { user: username, text });
+          }
+        } else {
+          console.warn('No audio recorded or audio blob is empty');
+          // Send text message only if no audio
+          socket.emit('chat-message', { user: username, text });
+        }
+      } catch (error) {
+        console.error('Error sending message:', error);
+        addMessage('System', `Error: ${error.message}`, 'system');
+      } finally {
+        messageInput.value = '';
+        sendButton.disabled = false;
+        sendButton.textContent = 'Send';
+      }
+    }
+    
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+    
+    audioInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const formData = new FormData();
+        formData.append('audio', file);
+        formData.append('user', username);
+        
+        fetch('/upload-audio', {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            console.log('Audio uploaded:', data.audioUrl);
+          }
+        })
+        .catch(err => console.error('Upload error:', err));
+      }
+    });
+  </script>
+</body>
+</html>
+

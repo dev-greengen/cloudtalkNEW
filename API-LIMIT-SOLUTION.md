@@ -41,3 +41,4 @@ Se il messaggio "Ok" è più vecchio di quando è stato inviato l'ultimo messagg
 
 **Imposta il cron job su cron-job.org a eseguire ogni 1-2 minuti** per assicurarti di catturare tutti i messaggi recenti.
 
+

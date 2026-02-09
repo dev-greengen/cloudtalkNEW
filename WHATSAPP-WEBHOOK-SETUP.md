@@ -62,3 +62,4 @@ Check webhook activity:
 - Check updated calls: Query `cloudtalk_calls` where `electricity_bill_received = true`
 - View recent updates: Query by `updated_at` timestamp
 
+
