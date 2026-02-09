@@ -340,17 +340,6 @@ Grazie e buona giornata.`;
       console.error('❌ All send endpoints failed');
       throw lastSendError || new Error('All Wasender send endpoints failed');
     }
-    const response = await fetch(sendEndpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${whatsappToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        to: normalizedPhone,
-        body: message
-      })
-    });
     
     const result = await response.json();
     
