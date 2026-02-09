@@ -1474,8 +1474,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
         const { error: updateError } = await supabase
           .from('cloudtalk_calls')
           .update({ 
-            electricity_bill_received: true,
-            updated_at: new Date().toISOString()
+            electricity_bill_received: true
           })
           .in('id', callIds);
         
@@ -1754,11 +1753,10 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
           
           const { error: updateError } = await supabase
             .from('cloudtalk_calls')
-            .update({ 
-              electricity_bill_received: true,
-              updated_at: new Date().toISOString()
-            })
-            .in('id', callIds);
+          .update({ 
+            electricity_bill_received: true
+          })
+          .in('id', callIds);
           
           if (!updateError) {
             updatedCount += callIds.length;
