@@ -1345,6 +1345,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
       
       if (!callsError && calls && calls.length > 0) {
         // Found calls for this number - update electricity_bill_received to true
+        // Update ALL records for this phone number, regardless of current value
         const callIds = calls.map(call => call.id);
         
         const { error: updateError } = await supabase
@@ -1353,8 +1354,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
             electricity_bill_received: true,
             updated_at: new Date().toISOString()
           })
-          .in('id', callIds)
-          .eq('electricity_bill_received', false); // Only update if not already true
+          .in('id', callIds);
         
         if (updateError) {
           console.error('Error updating electricity_bill_received:', updateError);
