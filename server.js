@@ -322,7 +322,7 @@ app.get('/monitor', async (req, res) => {
     const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>Monitor Messaggi WhatsApp - Numero 361</title>
+  <title>Monitor Messaggi WhatsApp - Real-Time</title>
   <meta charset="utf-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -513,9 +513,9 @@ app.get('/monitor', async (req, res) => {
     <div class="header">
       <h1>
         <span>📱</span>
-        Monitor Messaggi WhatsApp - Numero 361
+        Monitor Messaggi WhatsApp
       </h1>
-      <div class="status">Aggiornamento automatico ogni 5 secondi | Filtro: Numero 361 | Fonte: <span id="data-source">API WhatsApp</span></div>
+      <div class="status">Aggiornamento automatico ogni 5 secondi | Fonte: <span id="data-source">API WhatsApp</span></div>
     </div>
     
     <div class="stats" id="stats">
@@ -1717,14 +1717,8 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
           apiSuccess = true;
           const messagesArray = result.messages || result.data || [];
           
-          // Filter to show only incoming messages (from_me: false) and phone ending in 361
-          const incomingMessages = messagesArray.filter(msg => {
-            if (msg.from_me) return false;
-            // Check if phone number ends in 361
-            const from = msg.from || msg.phone_number || '';
-            const normalizedPhone = from.replace(/\D/g, ''); // Remove all non-digits
-            return normalizedPhone.endsWith('361');
-          });
+          // Filter to show only incoming messages (from_me: false)
+          const incomingMessages = messagesArray.filter(msg => !msg.from_me);
           
           // Sort by timestamp descending (most recent first)
           incomingMessages.sort((a, b) => {
@@ -1851,10 +1845,8 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
           return null;
         }
       }).filter(msg => {
-        // Remove null messages and filter by phone number ending in 361
-        if (!msg) return false;
-        const phoneEndsWith361 = msg._normalizedPhone && msg._normalizedPhone.endsWith('361');
-        return phoneEndsWith361;
+        // Remove null messages
+        return msg !== null;
       });
       
       // Filter by timestamp if since is provided
