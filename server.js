@@ -115,8 +115,8 @@ async function saveRequestToDB(requestData) {
         
         if (callData) {
           console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}`);
-          
-          // Automatically send WhatsApp if phone number is present
+        
+        // Automatically send WhatsApp if phone number is present
           if (callData.phone_number) {
             console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}...`);
             try {
@@ -126,11 +126,11 @@ async function saveRequestToDB(requestData) {
               } else {
                 console.error(`❌ WhatsApp send failed: ${result.error}`);
               }
-            } catch (whatsappErr) {
+          } catch (whatsappErr) {
               console.error('❌ Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
               console.error('❌ Error stack:', whatsappErr.stack);
-              // Don't fail - trigger will queue it as backup
-            }
+            // Don't fail - trigger will queue it as backup
+          }
           } else {
             console.log(`⚠️  No phone number found in call data. Cannot send WhatsApp.`);
           }
@@ -663,12 +663,12 @@ app.get('/monitor', async (req, res) => {
       
       let newCount = 0;
       if (data.messages && Array.isArray(data.messages)) {
-        data.messages.forEach(msg => {
+      data.messages.forEach(msg => {
           if (msg.id && !messageIds.has(msg.id)) {
-            newCount++;
-            messageIds.add(msg.id);
-          }
-        });
+          newCount++;
+          messageIds.add(msg.id);
+        }
+      });
       }
       document.getElementById('new-messages').textContent = newCount;
     }
@@ -943,14 +943,24 @@ app.post('/webhook', async (req, res) => {
 app.post('/webhook/cloudtalk', async (req, res) => {
   try {
     const payload = req.body;
-    console.log('CloudTalk webhook received:', payload);
+    console.log('📞 CloudTalk webhook received at /webhook/cloudtalk');
+    console.log('📋 Full payload:', JSON.stringify(payload, null, 2));
+    console.log('📋 Payload keys:', Object.keys(payload || {}).join(', '));
+    
+    // Check for nested data structure
+    if (payload && payload.data) {
+      console.log('📋 Found nested data structure');
+      console.log('📋 Data keys:', Object.keys(payload.data || {}).join(', '));
+    }
     
     res.json({ 
       success: true, 
       message: 'CloudTalk webhook received and saved to database',
-      data: payload 
+      data: payload,
+      received_at: new Date().toISOString()
     });
   } catch (error) {
+    console.error('❌ Error in /webhook/cloudtalk:', error);
     res.status(500).json({ 
       success: false, 
       error: error.message 
@@ -1342,7 +1352,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
       }
     } else {
       // Fallback to old format for compatibility
-      const messageData = webhookData.data || webhookData.message || webhookData;
+    const messageData = webhookData.data || webhookData.message || webhookData;
       fromNumber = messageData.from || messageData.phone_number || messageData.number || '';
       messageText = messageData.body?.body || messageData.body || messageData.text || '';
       
@@ -1418,30 +1428,30 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
         console.error('Error querying cloudtalk_calls:', callsError);
       } else {
         console.log(`ℹ️  Message from ${normalizedPhone} but no matching calls found`);
-      }
-      
+        }
+        
       // Always save the incoming message to webhook_requests for tracking (so it shows in monitor)
-      try {
-        await supabase
-          .from('webhook_requests')
-          .insert([{
-            method: 'POST',
-            path: '/api/whatsapp-webhook',
-            url: req.url,
-            headers: req.headers,
+        try {
+          await supabase
+            .from('webhook_requests')
+            .insert([{
+              method: 'POST',
+              path: '/api/whatsapp-webhook',
+              url: req.url,
+              headers: req.headers,
             body: formattedBody,
-            raw_body: JSON.stringify(webhookData),
-            ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+              raw_body: JSON.stringify(webhookData),
+              ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
             user_agent: req.get('user-agent') || 'Wasender-Webhook',
-            timestamp: new Date().toISOString(),
-            is_cloudtalk: false,
-            created_at: new Date().toISOString()
-          }]);
+              timestamp: new Date().toISOString(),
+              is_cloudtalk: false,
+              created_at: new Date().toISOString()
+            }]);
         console.log(`✅ Saved incoming message to database from ${normalizedPhone}`);
-      } catch (saveError) {
-        console.error('Error saving webhook:', saveError);
-      }
-    } else {
+        } catch (saveError) {
+          console.error('Error saving webhook:', saveError);
+        }
+      } else {
       // Event is not messages.received or no valid data, but still acknowledge
       console.log('ℹ️  Webhook received but not a messages.received event:', event);
     }
@@ -1743,10 +1753,10 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
         let response;
         try {
           response = await fetch(messagesEndpoint, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${whatsappToken}`,
-              'Content-Type': 'application/json'
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
             },
             signal: AbortSignal.timeout(5000) // 5 second timeout
           });
@@ -1770,42 +1780,42 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
           apiSuccess = true;
           const messagesArray = result.messages || result.data || [];
           
-          // Filter to show only incoming messages (from_me: false)
+      // Filter to show only incoming messages (from_me: false)
           const incomingMessages = messagesArray.filter(msg => !msg.from_me);
-          
-          // Sort by timestamp descending (most recent first)
-          incomingMessages.sort((a, b) => {
-            const tsA = a.timestamp || 0;
-            const tsB = b.timestamp || 0;
-            return tsB - tsA;
-          });
-          
-          // Filter by timestamp if since is provided
-          let filteredMessages = incomingMessages;
-          if (since) {
-            const sinceTimestamp = parseInt(since);
-            filteredMessages = incomingMessages.filter(msg => (msg.timestamp || 0) > sinceTimestamp);
-          }
-          
+      
+      // Sort by timestamp descending (most recent first)
+      incomingMessages.sort((a, b) => {
+        const tsA = a.timestamp || 0;
+        const tsB = b.timestamp || 0;
+        return tsB - tsA;
+      });
+      
+      // Filter by timestamp if since is provided
+      let filteredMessages = incomingMessages;
+      if (since) {
+        const sinceTimestamp = parseInt(since);
+        filteredMessages = incomingMessages.filter(msg => (msg.timestamp || 0) > sinceTimestamp);
+      }
+      
           return res.json({ 
-            success: true,
+        success: true,
             source: 'api',
             total: result.count || messagesArray.length || 0,
-            incoming_count: filteredMessages.length,
-            messages: filteredMessages.map(msg => ({
-              id: msg.id,
-              from: msg.from,
-              phone_number: msg.from?.replace('@s.whatsapp.net', '') || msg.phone_number,
+        incoming_count: filteredMessages.length,
+        messages: filteredMessages.map(msg => ({
+          id: msg.id,
+          from: msg.from,
+          phone_number: msg.from?.replace('@s.whatsapp.net', '') || msg.phone_number,
               text: msg.text?.body || msg.body || msg.text || '',
-              type: msg.type,
-              timestamp: msg.timestamp,
-              timestamp_readable: msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleString('it-IT') : null,
-              chat_id: msg.chat_id,
-              message: msg
-            })),
-            last_timestamp: filteredMessages.length > 0 ? filteredMessages[0].timestamp : null
-          });
-        } else {
+          type: msg.type,
+          timestamp: msg.timestamp,
+          timestamp_readable: msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleString('it-IT') : null,
+          chat_id: msg.chat_id,
+          message: msg
+        })),
+        last_timestamp: filteredMessages.length > 0 ? filteredMessages[0].timestamp : null
+      });
+    } else {
           // API returned error, will fallback to database
           // Don't log the error message to avoid confusion - just silently fallback
           // The error is: result?.error || result?.message
