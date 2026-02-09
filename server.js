@@ -1815,14 +1815,17 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
         const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
         
         // Try endpoints that might support GET for retrieving messages
-        // Note: /api/messages only supports PUT, not GET
+        // Note: /api/messages and /api/messages/list only support PUT/DELETE, not GET
+        // Wasender API might not have a GET endpoint for messages - rely on webhooks instead
+        // Try a few endpoints, but expect to fallback to database
         const possibleEndpoints = [
-          `${baseUrl}/messages/list?limit=${limit}`,  // From find-last-message.js
-          `${baseUrl}/messages?limit=${limit}`,  // Try without /api prefix
-          `${baseUrl}${apiPrefix}/get-messages?limit=${limit}`,
-          `${baseUrl}${apiPrefix}/messages/incoming?limit=${limit}`,
+          // Try without /api prefix first (if baseUrl already has /api)
+          `${baseUrl.replace(/\/api$/, '')}/messages/list?limit=${limit}`,
+          `${baseUrl.replace(/\/api$/, '')}/messages?limit=${limit}`,
+          // Try with different paths
+          `${baseUrl}${apiPrefix}/chats/messages?limit=${limit}`,
           `${baseUrl}${apiPrefix}/sessions/messages?limit=${limit}`,
-          // Skip /api/messages since it only supports PUT (405 error)
+          // Skip /api/messages and /api/messages/list (405 error - only PUT/DELETE)
         ];
         
         let response;
