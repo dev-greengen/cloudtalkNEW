@@ -85,13 +85,34 @@ async function saveRequestToDB(requestData) {
       created_at: new Date().toISOString()
     };
     
-    const { data, error } = await supabase
-      .from('webhook_requests')
-      .insert([dbRecord])
-      .select();
+    console.log(`💾 Attempting to insert into webhook_requests table...`);
+    let data, error;
+    try {
+      const result = await supabase
+        .from('webhook_requests')
+        .insert([dbRecord])
+        .select();
+      data = result.data;
+      error = result.error;
+    } catch (fetchError) {
+      console.error('❌ Fetch error when saving to database:', fetchError.message);
+      console.error('❌ Fetch error type:', fetchError.constructor.name);
+      console.error('❌ Fetch error stack:', fetchError.stack);
+      // Check if it's a network error
+      if (fetchError.message && fetchError.message.includes('fetch failed')) {
+        console.error('❌ This is a network/fetch error. Possible causes:');
+        console.error('   - Supabase URL is incorrect or unreachable');
+        console.error('   - Network timeout');
+        console.error('   - DNS resolution failed');
+        console.error('   - SSL/TLS certificate issue');
+      }
+      // Don't throw - continue processing even if DB save fails
+      return;
+    }
     
     if (error) {
       console.error('❌ Error saving to database:', error.message);
+      console.error('❌ Error code:', error.code);
       console.error('❌ Error details:', JSON.stringify(error, null, 2));
       // Don't throw - continue processing even if DB save fails
       return;
