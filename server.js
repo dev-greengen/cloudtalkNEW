@@ -1815,12 +1815,14 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
         const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
         
         // Try endpoints that might support GET for retrieving messages
+        // Note: /api/messages only supports PUT, not GET
         const possibleEndpoints = [
+          `${baseUrl}/messages/list?limit=${limit}`,  // From find-last-message.js
           `${baseUrl}/messages?limit=${limit}`,  // Try without /api prefix
           `${baseUrl}${apiPrefix}/get-messages?limit=${limit}`,
           `${baseUrl}${apiPrefix}/messages/incoming?limit=${limit}`,
           `${baseUrl}${apiPrefix}/sessions/messages?limit=${limit}`,
-          // Skip /api/messages since it only supports PUT
+          // Skip /api/messages since it only supports PUT (405 error)
         ];
         
         let response;
