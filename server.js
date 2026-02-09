@@ -1776,22 +1776,43 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
       try {
         // Wasender API endpoint for getting messages - adjust if different
         // Common patterns: /api/messages, /messages, /api/get-messages
-        const messagesEndpoint = `${whatsappUrl}/api/messages?limit=${limit}`;
-        console.log('🌐 Attempting to fetch from Wasender:', messagesEndpoint.substring(0, 50) + '...');
+        // Try different Wasender API endpoints
+        const possibleEndpoints = [
+          `${whatsappUrl}/api/messages?limit=${limit}`,
+          `${whatsappUrl}/messages?limit=${limit}`,
+          `${whatsappUrl}/api/get-messages?limit=${limit}`
+        ];
         
         let response;
-        try {
-          response = await fetch(messagesEndpoint, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${whatsappToken}`,
-        'Content-Type': 'application/json'
-            },
-            signal: AbortSignal.timeout(5000) // 5 second timeout
-          });
-        } catch (fetchErr) {
-          console.log('❌ Fetch call failed:', fetchErr.message);
-          throw fetchErr; // Re-throw to be caught by outer catch
+        let lastError;
+        
+        for (const messagesEndpoint of possibleEndpoints) {
+          console.log(`🌐 Attempting to fetch from Wasender: ${messagesEndpoint}`);
+          try {
+            response = await fetch(messagesEndpoint, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${whatsappToken}`,
+                'Content-Type': 'application/json'
+              },
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            });
+            
+            // If we get a response (even if error status), this endpoint exists
+            console.log(`✅ Got response from ${messagesEndpoint}, status: ${response.status}`);
+            break; // Success, exit loop
+          } catch (fetchErr) {
+            console.log(`❌ Fetch failed for ${messagesEndpoint}:`, fetchErr.message);
+            lastError = fetchErr;
+            // Continue to next endpoint
+            continue;
+          }
+        }
+        
+        // If all endpoints failed, throw the last error
+        if (!response) {
+          console.error('❌ All Wasender API endpoints failed');
+          throw lastError || new Error('All Wasender API endpoints failed');
         }
         
         let result;
