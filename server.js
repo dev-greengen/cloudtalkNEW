@@ -1805,11 +1805,14 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
       try {
         // Wasender API endpoint for getting messages - adjust if different
         // Common patterns: /api/messages, /messages, /api/get-messages
-        // Try different Wasender API endpoints
+        // If URL already ends with /api, don't add it again
+        const baseUrl = whatsappUrl.endsWith('/api') ? whatsappUrl : whatsappUrl;
+        const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
+        
         const possibleEndpoints = [
-          `${whatsappUrl}/api/messages?limit=${limit}`,
-          `${whatsappUrl}/messages?limit=${limit}`,
-          `${whatsappUrl}/api/get-messages?limit=${limit}`
+          `${baseUrl}${apiPrefix}/messages?limit=${limit}`,
+          `${baseUrl}/messages?limit=${limit}`,
+          `${baseUrl}${apiPrefix}/get-messages?limit=${limit}`
         ];
         
         let response;
