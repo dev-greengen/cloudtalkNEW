@@ -8,6 +8,10 @@
   ],
   "routes": [
     {
+      "src": "/monitor",
+      "dest": "server.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "server.js"
     }
@@ -15,7 +19,8 @@
   "env": {
     "SUPABASE_URL": "https://pmtpufqtohygciwsdewt.supabase.co",
     "SUPABASE_KEY": "sb_publishable_9WUXqQA-w5JKRpaojmhZhA_hBApvDsq",
-    "WHATSAPP_API_TOKEN": "TJJs7JOsxKdKyqMLKkiovuvVgs2lmfVA",
-    "WHATSAPP_API_URL": "https://gate.whapi.cloud"
+    "WHATSAPP_API_TOKEN": "614b8b5faa7e09487054d904ac36d5eda62beee709a5793d0454a1dfb143b449",
+    "WHATSAPP_API_URL": "",
+    "WHATSAPP_WEBHOOK_SECRET": "b1a930418d732650a55173d0eb3cc843"
   }
 }

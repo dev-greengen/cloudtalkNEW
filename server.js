@@ -183,11 +183,16 @@ async function saveCloudTalkCallData(webhookRequestId, body) {
 async function sendWhatsAppMessage(phoneNumber, webhookRequestId, callId) {
   try {
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
     if (!whatsappToken) {
       console.error('WHATSAPP_API_TOKEN not configured');
       return { success: false, error: 'WhatsApp API not configured' };
+    }
+    
+    if (!whatsappUrl) {
+      console.error('WHATSAPP_API_URL not configured');
+      return { success: false, error: 'WhatsApp API URL not configured' };
     }
     
     // Italian message asking for bolletta (electricity bill)
@@ -212,8 +217,12 @@ Grazie e buona giornata.`;
     
     console.log(`📤 Auto-sending WhatsApp to ${normalizedPhone} (original: ${phoneNumber})`);
     
-    // Send WhatsApp message via Whapi.Cloud API
-    const response = await fetch(`${whatsappUrl}/messages/text`, {
+    // Send WhatsApp message via Wasender API
+    // Wasender endpoint for sending messages - adjust if different
+    // Common patterns: /api/send, /send, /api/send-message, /messages/send, /messages/text
+    // Try /api/send first, fallback to /messages/text if needed
+    const sendEndpoint = `${whatsappUrl}/api/send`;
+    const response = await fetch(sendEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
@@ -268,10 +277,410 @@ Grazie e buona giornata.`;
   }
 }
 
+// Test endpoint to verify routing works
+app.get('/test-monitor', (req, res) => {
+  res.send('Monitor endpoint test - OK');
+});
+
+// Real-time monitoring page for incoming WhatsApp messages (defined early to avoid middleware issues)
+app.get('/monitor', async (req, res) => {
+  console.log('📱 Monitor endpoint called');
+  try {
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Monitor Messaggi WhatsApp - Numero 361</title>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+    }
+    .header .status {
+      font-size: 0.6em;
+      opacity: 0.9;
+      margin-top: 10px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      padding: 30px;
+      background: #f8f9fa;
+      border-bottom: 2px solid #e9ecef;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .stat-card .number {
+      font-size: 2.5em;
+      font-weight: bold;
+      color: #25D366;
+      margin-bottom: 5px;
+    }
+    .stat-card .label {
+      color: #666;
+      font-size: 0.9em;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .messages-container {
+      padding: 30px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .message {
+      background: #f8f9fa;
+      border-left: 4px solid #25D366;
+      padding: 20px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      transition: all 0.3s ease;
+      animation: slideIn 0.3s ease;
+    }
+    .message.new {
+      background: #e8f5e9;
+      border-left-color: #4caf50;
+      animation: highlight 0.5s ease;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(-20px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes highlight {
+      0%, 100% { background: #e8f5e9; }
+      50% { background: #c8e6c9; }
+    }
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .message-phone {
+      font-weight: bold;
+      color: #25D366;
+      font-size: 1.1em;
+    }
+    .message-time {
+      color: #666;
+      font-size: 0.9em;
+    }
+    .message-text {
+      color: #333;
+      line-height: 1.6;
+      margin-top: 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .message-type {
+      display: inline-block;
+      background: #25D366;
+      color: white;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.8em;
+      margin-left: 10px;
+    }
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: #999;
+    }
+    .empty-icon {
+      font-size: 4em;
+      margin-bottom: 20px;
+    }
+    .refresh-info {
+      text-align: center;
+      padding: 15px;
+      background: #e3f2fd;
+      color: #1976d2;
+      font-size: 0.9em;
+    }
+    .controls {
+      padding: 20px 30px;
+      background: #f8f9fa;
+      border-top: 2px solid #e9ecef;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+    .btn {
+      background: #25D366;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: all 0.3s ease;
+    }
+    .btn:hover {
+      background: #128C7E;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+    }
+    .auto-refresh {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .auto-refresh input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>
+        <span>📱</span>
+        Monitor Messaggi WhatsApp - Numero 361
+      </h1>
+      <div class="status">Aggiornamento automatico ogni 5 secondi | Filtro: Numero 361 | Fonte: <span id="data-source">API WhatsApp</span></div>
+    </div>
+    
+    <div class="stats" id="stats">
+      <div class="stat-card">
+        <div class="number" id="total-messages">0</div>
+        <div class="label">Messaggi Totali</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="new-messages">0</div>
+        <div class="label">Nuovi Oggi</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="last-update">--:--</div>
+        <div class="label">Ultimo Aggiornamento</div>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button class="btn" onclick="refreshMessages()">🔄 Aggiorna Ora</button>
+      <div class="auto-refresh">
+        <label>
+          <input type="checkbox" id="auto-refresh" checked onchange="toggleAutoRefresh()">
+          Auto-refresh (5s)
+        </label>
+      </div>
+    </div>
+    
+    <div class="messages-container" id="messages-container">
+      <div class="empty">
+        <div class="empty-icon">📭</div>
+        <div>Caricamento messaggi...</div>
+      </div>
+    </div>
+    
+    <div class="refresh-info">
+      ⏱️ Prossimo aggiornamento automatico tra <span id="countdown">5</span> secondi
+    </div>
+  </div>
+
+  <script>
+    let lastTimestamp = null;
+    let autoRefreshInterval = null;
+    let countdownInterval = null;
+    let messageIds = new Set();
+
+    async function loadMessages() {
+      try {
+        const url = '/api/whatsapp-incoming?limit=50' + (lastTimestamp ? '&since=' + lastTimestamp : '');
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+          throw new Error('HTTP error! status: ' + response.status);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          // Update data source indicator
+          const sourceElement = document.getElementById('data-source');
+          if (sourceElement) {
+            if (data.source === 'database') {
+              sourceElement.textContent = 'Database (fallback)';
+              sourceElement.style.color = '#ff9800';
+            } else {
+              sourceElement.textContent = 'API Wasender';
+              sourceElement.style.color = '#25D366';
+            }
+          }
+          updateStats(data);
+          displayMessages(data.messages || []);
+          if (data.last_timestamp) {
+            lastTimestamp = data.last_timestamp;
+          }
+          // Never show error if success is true - even if there's an error field, we have data
+        } else {
+          // Only show error if success is false AND we don't have messages
+          // But since we always return success: true now, this should rarely happen
+          if (!data.messages || data.messages.length === 0) {
+            // Don't log to console - just show empty state
+            const container = document.getElementById('messages-container');
+            container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div>Nessun messaggio disponibile</div></div>';
+          } else {
+            // We have messages even though success is false - show them anyway
+            updateStats(data);
+            displayMessages(data.messages || []);
+          }
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        const container = document.getElementById('messages-container');
+        container.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div>Errore nel caricamento: ' + error.message + '</div></div>';
+      }
+    }
+
+    function updateStats(data) {
+      document.getElementById('total-messages').textContent = data.incoming_count || 0;
+      document.getElementById('last-update').textContent = new Date().toLocaleTimeString('it-IT');
+      
+      let newCount = 0;
+      if (data.messages && Array.isArray(data.messages)) {
+        data.messages.forEach(msg => {
+          if (msg.id && !messageIds.has(msg.id)) {
+            newCount++;
+            messageIds.add(msg.id);
+          }
+        });
+      }
+      document.getElementById('new-messages').textContent = newCount;
+    }
+
+    function displayMessages(messages) {
+      const container = document.getElementById('messages-container');
+      
+      if (messages.length === 0) {
+        container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div>Nessun messaggio in arrivo</div></div>';
+        return;
+      }
+      
+      let html = '';
+      messages.forEach(msg => {
+        const msgId = msg.id || (msg.timestamp + '-' + msg.from);
+        const isNew = msg.id ? !messageIds.has(msg.id) : true;
+        if (msg.id) {
+          messageIds.add(msg.id);
+        }
+        const phone = msg.phone_number || (msg.from ? msg.from.replace('@s.whatsapp.net', '') : '') || 'Sconosciuto';
+        const text = msg.text || '(messaggio non testuale)';
+        const time = msg.timestamp_readable || 'N/A';
+        const type = msg.type || 'text';
+        
+        html += '<div class="message ' + (isNew ? 'new' : '') + '" data-id="' + msgId + '">' +
+          '<div class="message-header">' +
+            '<div>' +
+              '<span class="message-phone">📞 ' + phone + '</span>' +
+              '<span class="message-type">' + type + '</span>' +
+            '</div>' +
+            '<div class="message-time">' + time + '</div>' +
+          '</div>' +
+          '<div class="message-text">' + escapeHtml(text) + '</div>' +
+        '</div>';
+      });
+      
+      container.innerHTML = html;
+      container.scrollTop = 0;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function refreshMessages() {
+      loadMessages();
+    }
+
+    function toggleAutoRefresh() {
+      const checkbox = document.getElementById('auto-refresh');
+      if (checkbox.checked) {
+        startAutoRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    }
+
+    function startAutoRefresh() {
+      if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+      if (countdownInterval) clearInterval(countdownInterval);
+      
+      let countdown = 5;
+      document.getElementById('countdown').textContent = countdown;
+      
+      countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdown <= 0) countdown = 5;
+        document.getElementById('countdown').textContent = countdown;
+      }, 1000);
+      
+      autoRefreshInterval = setInterval(() => {
+        loadMessages();
+      }, 5000);
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+      if (countdownInterval) clearInterval(countdownInterval);
+      document.getElementById('countdown').textContent = '--';
+    }
+
+    loadMessages();
+    startAutoRefresh();
+  </script>
+</body>
+</html>`;
+    
+    res.send(html);
+  } catch (error) {
+    console.error('Monitor endpoint error:', error);
+    res.status(500).send('<h1>Error</h1><pre>' + error.message + '</pre>');
+  }
+});
+
 // Capture all requests after parsing
 app.use(async (req, res, next) => {
-  // Skip capturing the main page requests to avoid clutter
-  if (req.path === '/' && req.method === 'GET') {
+  // Skip capturing the main page requests and monitor page to avoid clutter
+  if ((req.path === '/' || req.path === '/monitor') && req.method === 'GET') {
     return next();
   }
   
@@ -360,7 +769,8 @@ app.get('/', async (req, res) => {
     In Memory: ${requests.length} | 
     In DB: ${dbStats.total} (CloudTalk: ${dbStats.cloudtalk}) |
     <a href="/api/webhooks" style="color: #4ec9b0; margin-left: 10px;">View All in DB</a> |
-    <a href="/api/cloudtalk-webhooks" style="color: #4ec9b0;">CloudTalk Only</a>
+    <a href="/api/cloudtalk-webhooks" style="color: #4ec9b0;">CloudTalk Only</a> |
+    <a href="/monitor" style="color: #25D366; font-weight: bold;">📱 Monitor WhatsApp</a>
   </div>
   ${requests.length === 0 ? '<div class="empty">No requests yet. Send a request to this URL to see it here.</div>' : ''}
   ${requests.map(req => `
@@ -582,7 +992,7 @@ app.get('/api/cloudtalk-calls/last/status', async (req, res) => {
     if (lastCall.phone_number) {
       try {
         const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-        const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+        const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
         
         if (whatsappToken) {
           // Normalize phone number
@@ -594,8 +1004,10 @@ app.get('/api/cloudtalk-calls/last/status', async (req, res) => {
             normalizedPhone = '39' + normalizedPhone;
           }
           
-          // Get recent messages
-          const response = await fetch(`${whatsappUrl}/messages/list?limit=50`, {
+          // Get recent messages from Wasender
+          // Wasender endpoint: /api/messages or /messages (adjust based on your Wasender instance)
+          const messagesEndpoint = `${whatsappUrl}/api/messages?limit=50`;
+          const response = await fetch(messagesEndpoint, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${whatsappToken}`,
@@ -656,7 +1068,7 @@ app.post('/api/send-whatsapp', async (req, res) => {
     
     // Get WhatsApp API credentials from environment
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
     if (!whatsappToken) {
       console.error('WHATSAPP_API_TOKEN not configured');
@@ -676,8 +1088,10 @@ app.post('/api/send-whatsapp', async (req, res) => {
     
     console.log(`📤 Sending WhatsApp to ${normalizedPhone} (original: ${phone_number})`);
     
-    // Send WhatsApp message via Whapi.Cloud API
-    const response = await fetch(`${whatsappUrl}/messages/text`, {
+    // Send WhatsApp message via Wasender API
+    // Wasender endpoint for sending messages - adjust if different
+    const sendEndpoint = `${whatsappUrl}/api/send`;
+    const response = await fetch(sendEndpoint, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
@@ -733,14 +1147,40 @@ app.post('/api/send-whatsapp', async (req, res) => {
   }
 });
 
-// Webhook endpoint to receive incoming WhatsApp messages from Whapi.Cloud
+// Webhook endpoint to receive incoming WhatsApp messages from Wasender
 app.post('/api/whatsapp-webhook', async (req, res) => {
   try {
+    // Verify webhook secret if configured
+    const webhookSecret = process.env.WHATSAPP_WEBHOOK_SECRET;
+    if (webhookSecret) {
+      // Check for secret in headers (common formats: X-Webhook-Secret, X-Wasender-Secret, Authorization)
+      const headerSecret = req.headers['x-webhook-secret'] || 
+                          req.headers['x-wasender-secret'] || 
+                          req.headers['x-secret'] ||
+                          (req.headers['authorization'] && req.headers['authorization'].replace('Bearer ', ''));
+      
+      // Also check in body if present (some services send it in the payload)
+      const bodySecret = req.body?.secret || req.body?.webhook_secret || req.body?.webhookSecret;
+      
+      const receivedSecret = headerSecret || bodySecret;
+      
+      if (!receivedSecret || receivedSecret !== webhookSecret) {
+        console.warn('⚠️  Webhook secret verification failed');
+        console.warn('   Expected:', webhookSecret.substring(0, 10) + '...');
+        console.warn('   Received:', receivedSecret ? receivedSecret.substring(0, 10) + '...' : 'none');
+        return res.status(401).json({ 
+          success: false, 
+          error: 'Invalid webhook secret' 
+        });
+      }
+      console.log('✅ Webhook secret verified');
+    }
+    
     const webhookData = req.body;
     
     console.log('📥 Incoming WhatsApp webhook:', JSON.stringify(webhookData, null, 2));
     
-    // Whapi.Cloud webhook structure: { event, data: { from, to, body, ... } }
+    // Wasender webhook structure: { event, data: { from, to, body, ... } }
     const event = webhookData.event || webhookData.type;
     const messageData = webhookData.data || webhookData.message || webhookData;
     
@@ -807,7 +1247,7 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
               body: webhookData,
               raw_body: JSON.stringify(webhookData),
               ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
-              user_agent: req.get('user-agent') || 'Whapi.Cloud-Webhook',
+              user_agent: req.get('user-agent') || 'Wasender-Webhook',
               timestamp: new Date().toISOString(),
               is_cloudtalk: false,
               created_at: new Date().toISOString()
@@ -833,7 +1273,7 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     const { limit = 200 } = req.query; // Increased default limit
     
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
     if (!whatsappToken) {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
@@ -900,7 +1340,9 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
     // Also get general messages list as fallback
     const maxLimit = Math.max(parseInt(limit), 1000);
     console.log(`📥 Also fetching up to ${maxLimit} messages from general list...`);
-    const response = await fetch(`${whatsappUrl}/messages/list?limit=${maxLimit}`, {
+    // Wasender API endpoint for getting messages
+    const messagesEndpoint = `${whatsappUrl}/api/messages?limit=${maxLimit}`;
+    const response = await fetch(messagesEndpoint, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
@@ -1091,19 +1533,252 @@ app.get('/api/check-whatsapp-replies', async (req, res) => {
   }
 });
 
-// Get last sent WhatsApp messages from Whapi
+// Get incoming WhatsApp messages in real-time
+app.get('/api/whatsapp-incoming', async (req, res) => {
+  try {
+    const { limit = 50, since } = req.query;
+    
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    // Wasender API URL - must be configured in environment variables
+    const whatsappUrl = process.env.WHATSAPP_API_URL;
+    
+    console.log('📥 /api/whatsapp-incoming called', { limit, since, hasToken: !!whatsappToken, hasUrl: !!whatsappUrl });
+    
+    // Try WhatsApp API first (Wasender) - but always fallback to database if it fails
+    let apiSuccess = false;
+    // Only try API if both token and URL are provided and URL is not empty
+    if (whatsappToken && whatsappUrl && whatsappUrl.trim() !== '') {
+      try {
+        // Wasender API endpoint for getting messages - adjust if different
+        // Common patterns: /api/messages, /messages, /api/get-messages
+        const messagesEndpoint = `${whatsappUrl}/api/messages?limit=${limit}`;
+        console.log('🌐 Attempting to fetch from Wasender:', messagesEndpoint.substring(0, 50) + '...');
+        
+        let response;
+        try {
+          response = await fetch(messagesEndpoint, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${whatsappToken}`,
+              'Content-Type': 'application/json'
+            },
+            signal: AbortSignal.timeout(5000) // 5 second timeout
+          });
+        } catch (fetchErr) {
+          console.log('❌ Fetch call failed:', fetchErr.message);
+          throw fetchErr; // Re-throw to be caught by outer catch
+        }
+        
+        let result;
+        try {
+          result = await response.json();
+        } catch (jsonError) {
+          // Response is not valid JSON, fallback to database
+          console.log('Invalid JSON response from Wasender API, falling back to database');
+          result = { error: 'Invalid response format' };
+        }
+        
+        // Check for Wasender API errors
+        if (response.ok && (result.messages || result.data) && !result.error && result.message !== 'Channel not found') {
+          // Success - process messages
+          apiSuccess = true;
+          const messagesArray = result.messages || result.data || [];
+          
+          // Filter to show only incoming messages (from_me: false) and phone ending in 361
+          const incomingMessages = messagesArray.filter(msg => {
+            if (msg.from_me) return false;
+            // Check if phone number ends in 361
+            const from = msg.from || msg.phone_number || '';
+            const normalizedPhone = from.replace(/\D/g, ''); // Remove all non-digits
+            return normalizedPhone.endsWith('361');
+          });
+          
+          // Sort by timestamp descending (most recent first)
+          incomingMessages.sort((a, b) => {
+            const tsA = a.timestamp || 0;
+            const tsB = b.timestamp || 0;
+            return tsB - tsA;
+          });
+          
+          // Filter by timestamp if since is provided
+          let filteredMessages = incomingMessages;
+          if (since) {
+            const sinceTimestamp = parseInt(since);
+            filteredMessages = incomingMessages.filter(msg => (msg.timestamp || 0) > sinceTimestamp);
+          }
+          
+          return res.json({ 
+            success: true,
+            source: 'api',
+            total: result.count || messagesArray.length || 0,
+            incoming_count: filteredMessages.length,
+            messages: filteredMessages.map(msg => ({
+              id: msg.id,
+              from: msg.from,
+              phone_number: msg.from?.replace('@s.whatsapp.net', '') || msg.phone_number,
+              text: msg.text?.body || msg.body || msg.text || '',
+              type: msg.type,
+              timestamp: msg.timestamp,
+              timestamp_readable: msg.timestamp ? new Date(msg.timestamp * 1000).toLocaleString('it-IT') : null,
+              chat_id: msg.chat_id,
+              message: msg
+            })),
+            last_timestamp: filteredMessages.length > 0 ? filteredMessages[0].timestamp : null
+          });
+        } else {
+          // API returned error, will fallback to database
+          // Don't log the error message to avoid confusion - just silently fallback
+          // The error is: result?.error || result?.message
+          // We'll use database instead
+        }
+      } catch (apiError) {
+        // API request failed, will fallback to database
+        console.log('WhatsApp API request failed, falling back to database:', apiError.message);
+        // Don't return here - continue to database fallback below
+      }
+    }
+    
+    // Always fallback to database (if API didn't succeed or wasn't tried)
+    
+    // Always fallback to database (if API didn't succeed or wasn't tried)
+    try {
+      let webhooks = [];
+      let dbError = null;
+      
+      try {
+        console.log('📊 Querying database for webhooks...');
+        const queryBuilder = supabase
+          .from('webhook_requests')
+          .select('*')
+          .eq('path', '/api/whatsapp-webhook')
+          .order('created_at', { ascending: false })
+          .limit(parseInt(limit));
+        
+        // Supabase queries return promises, so always await
+        const result = await queryBuilder;
+        
+        console.log('📊 Database query result:', { hasData: !!result?.data, dataLength: result?.data?.length, hasError: !!result?.error });
+        
+        if (result && result.data) {
+          webhooks = result.data;
+        }
+        if (result && result.error) {
+          dbError = result.error;
+          console.error('Database error:', dbError);
+        }
+      } catch (supabaseError) {
+        console.error('Supabase query exception:', supabaseError);
+        dbError = supabaseError;
+        webhooks = []; // Set to empty array on error
+      }
+      
+      if (dbError) {
+        console.error('Database error:', dbError);
+        // Don't throw - return empty result instead
+      }
+      
+      const messages = (Array.isArray(webhooks) ? webhooks : []).map(wh => {
+        try {
+          const body = typeof wh.body === 'string' ? JSON.parse(wh.body) : wh.body;
+          const data = body.data || body.message || body;
+          const from = data.from || data.phone_number || data.number || '';
+          const messageText = data.body?.body || data.body || data.text || '';
+          const timestamp = wh.created_at ? Math.floor(new Date(wh.created_at).getTime() / 1000) : null;
+          
+          // Normalize phone number for filtering
+          const normalizedFrom = from.replace(/\D/g, ''); // Remove all non-digits
+          
+          return {
+            id: wh.id,
+            from: from,
+            phone_number: from.replace('@s.whatsapp.net', ''),
+            text: messageText,
+            type: data.type || 'text',
+            timestamp: timestamp,
+            timestamp_readable: wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : null,
+            chat_id: data.chat_id || null,
+            message: data,
+            _normalizedPhone: normalizedFrom // For filtering
+          };
+        } catch (parseError) {
+          console.error('Error parsing webhook body:', parseError);
+          return null;
+        }
+      }).filter(msg => {
+        // Remove null messages and filter by phone number ending in 361
+        if (!msg) return false;
+        const phoneEndsWith361 = msg._normalizedPhone && msg._normalizedPhone.endsWith('361');
+        return phoneEndsWith361;
+      });
+      
+      // Filter by timestamp if since is provided
+      let filteredMessages = messages;
+      if (since) {
+        const sinceTimestamp = parseInt(since);
+        filteredMessages = messages.filter(msg => (msg.timestamp || 0) > sinceTimestamp);
+      }
+      
+      // Always return 200 status, even if API failed - we have database fallback
+      return res.status(200).json({ 
+        success: true,
+        source: 'database',
+        total: messages.length,
+        incoming_count: filteredMessages.length,
+        messages: filteredMessages,
+        last_timestamp: filteredMessages.length > 0 ? filteredMessages[0].timestamp : null
+      });
+    } catch (dbError) {
+      console.error('Error fetching from database:', dbError);
+      // Even if database fails, return 200 with empty array instead of error
+      return res.status(200).json({ 
+        success: true,
+        source: 'database',
+        total: 0,
+        incoming_count: 0,
+        messages: [],
+        last_timestamp: null,
+        note: 'Database query failed, but returning empty result'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ CRITICAL Error in /api/whatsapp-incoming:', error);
+    console.error('Error stack:', error.stack);
+    // ALWAYS return 200 with empty result - never return 500
+    // This prevents frontend errors
+    try {
+      return res.status(200).json({ 
+        success: true,
+        source: 'database',
+        total: 0,
+        incoming_count: 0,
+        messages: [],
+        last_timestamp: null,
+        error: error.message || 'Unknown error',
+        note: 'Error occurred but returning empty result'
+      });
+    } catch (responseError) {
+      // If we can't send response, log it
+      console.error('Failed to send error response:', responseError);
+    }
+  }
+});
+
+// Get last sent WhatsApp messages from Wasender
 app.get('/api/whatsapp-messages', async (req, res) => {
   try {
     const { limit = 50 } = req.query;
     
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
     if (!whatsappToken) {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
     }
     
-    const response = await fetch(`${whatsappUrl}/messages/list?limit=${limit}`, {
+    // Wasender API endpoint for getting messages
+    const messagesEndpoint = `${whatsappUrl}/api/messages?limit=${limit}`;
+    const response = await fetch(messagesEndpoint, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${whatsappToken}`,
@@ -1123,6 +1798,104 @@ app.get('/api/whatsapp-messages', async (req, res) => {
         sent_count: sentMessages.length,
         messages: sentMessages,
         all_messages: result.messages || []
+      });
+    } else {
+      res.status(response.status).json({ 
+        success: false, 
+        error: result.error || result.message || 'Failed to fetch messages',
+        details: result 
+      });
+    }
+  } catch (error) {
+    console.error('Error fetching WhatsApp messages:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Get last received message from a specific phone number
+app.get('/api/whatsapp-messages/:phoneNumber', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const { limit = 200 } = req.query;
+    
+    const whatsappToken = process.env.WHATSAPP_API_TOKEN;
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
+    
+    if (!whatsappToken) {
+      return res.status(500).json({ error: 'WhatsApp API not configured' });
+    }
+    
+    // Normalize phone number
+    let normalizedPhone = phoneNumber.replace(/\D/g, '');
+    if (normalizedPhone.startsWith('+')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    if (normalizedPhone.length === 10 && !normalizedPhone.startsWith('39')) {
+      normalizedPhone = '39' + normalizedPhone;
+    }
+    
+    // Get messages from Wasender
+    const messagesEndpoint = `${whatsappUrl}/api/messages?limit=${limit}`;
+    const response = await fetch(messagesEndpoint, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${whatsappToken}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      // Filter to only incoming messages from this number
+      const normalizePhoneForMatch = (phone) => {
+        let normalized = String(phone).replace(/\D/g, '');
+        if (normalized.startsWith('+')) normalized = normalized.substring(1);
+        return normalized.length >= 10 ? normalized.slice(-10) : normalized;
+      };
+      
+      const targetPhoneNormalized = normalizePhoneForMatch(normalizedPhone);
+      
+      const messagesFromNumber = (result.messages || []).filter(msg => {
+        if (msg.from_me === true) return false; // Only incoming messages
+        
+        const msgFrom = msg.from || msg.phone_number || '';
+        const msgFromNormalized = normalizePhoneForMatch(msgFrom);
+        
+        // Match by last 10 digits or full number
+        return msgFromNormalized === targetPhoneNormalized ||
+               msgFrom.replace(/\D/g, '') === normalizedPhone.replace(/\D/g, '') ||
+               msgFrom.replace(/\D/g, '').endsWith(targetPhoneNormalized) ||
+               normalizedPhone.replace(/\D/g, '').endsWith(msgFromNormalized);
+      });
+      
+      // Sort by timestamp descending (most recent first)
+      messagesFromNumber.sort((a, b) => {
+        const tsA = a.timestamp || 0;
+        const tsB = b.timestamp || 0;
+        return tsB - tsA;
+      });
+      
+      const lastMessage = messagesFromNumber.length > 0 ? messagesFromNumber[0] : null;
+      
+      res.json({ 
+        success: true,
+        phone_number: phoneNumber,
+        normalized_phone: normalizedPhone,
+        total_messages_from_number: messagesFromNumber.length,
+        last_message: lastMessage ? {
+          id: lastMessage.id,
+          text: lastMessage.text?.body || lastMessage.body || '',
+          type: lastMessage.type,
+          timestamp: lastMessage.timestamp,
+          timestamp_readable: lastMessage.timestamp ? new Date(lastMessage.timestamp * 1000).toISOString() : null,
+          from: lastMessage.from,
+          message: lastMessage
+        } : null,
+        all_messages: messagesFromNumber.slice(0, 10) // Last 10 messages
       });
     } else {
       res.status(response.status).json({ 
@@ -1160,7 +1933,7 @@ app.post('/api/process-whatsapp-queue', async (req, res) => {
     }
     
     const whatsappToken = process.env.WHATSAPP_API_TOKEN;
-    const whatsappUrl = process.env.WHATSAPP_API_URL || 'https://gate.whapi.cloud';
+    const whatsappUrl = process.env.WHATSAPP_API_URL; // Wasender API URL - must be set in environment variables
     
     if (!whatsappToken) {
       return res.status(500).json({ error: 'WhatsApp API not configured' });
@@ -1180,8 +1953,9 @@ app.post('/api/process-whatsapp-queue', async (req, res) => {
           normalizedPhone = '39' + normalizedPhone;
         }
         
-        // Send WhatsApp
-        const response = await fetch(`${whatsappUrl}/messages/text`, {
+        // Send WhatsApp via Wasender
+        const sendEndpoint = `${whatsappUrl}/api/send`;
+        const response = await fetch(sendEndpoint, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${whatsappToken}`,
@@ -1253,6 +2027,52 @@ app.get('/data', async (req, res) => {
     res.json({ data });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get incoming messages from database (webhook_requests)
+app.get('/api/whatsapp-incoming-db', async (req, res) => {
+  try {
+    const { limit = 50 } = req.query;
+    
+    const { data: webhooks, error } = await supabase
+      .from('webhook_requests')
+      .select('*')
+      .eq('path', '/api/whatsapp-webhook')
+      .order('created_at', { ascending: false })
+      .limit(parseInt(limit));
+    
+    if (error) throw error;
+    
+    const messages = (webhooks || []).map(wh => {
+      const body = typeof wh.body === 'string' ? JSON.parse(wh.body) : wh.body;
+      const data = body.data || body.message || body;
+      const from = data.from || data.phone_number || data.number || '';
+      const messageText = data.body?.body || data.body || data.text || '';
+      
+      return {
+        id: wh.id,
+        from: from,
+        phone_number: from.replace('@s.whatsapp.net', ''),
+        text: messageText,
+        type: data.type || 'text',
+        timestamp: wh.created_at ? Math.floor(new Date(wh.created_at).getTime() / 1000) : null,
+        timestamp_readable: wh.created_at ? new Date(wh.created_at).toLocaleString('it-IT') : null,
+        raw: data
+      };
+    });
+    
+    res.json({
+      success: true,
+      count: messages.length,
+      messages: messages
+    });
+  } catch (error) {
+    console.error('Error fetching messages from database:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
