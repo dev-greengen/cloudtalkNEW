@@ -1258,15 +1258,49 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
     
     console.log('📥 Incoming WhatsApp webhook:', JSON.stringify(webhookData, null, 2));
     
-    // Wasender webhook structure: { event, data: { from, to, body, ... } }
+    // Wasender webhook structure according to https://wasenderapi.com/api-docs/webhooks/webhook-message-received
+    // Format: { event: "messages.received", timestamp: 123, data: { messages: { key: {...}, messageBody: "...", message: {...} } } }
     const event = webhookData.event || webhookData.type;
-    const messageData = webhookData.data || webhookData.message || webhookData;
     
-    // Only process incoming messages (not sent messages)
-    if (event === 'messages' || event === 'message' || (messageData && !messageData.from_me)) {
-      const fromNumber = messageData.from || messageData.phone_number || messageData.number;
-      const messageText = messageData.body?.body || messageData.body || messageData.text || '';
+    // Handle Wasender API format: data.messages.key and data.messages.messageBody
+    let fromNumber = '';
+    let messageText = '';
+    let messageKey = null;
+    
+    if (event === 'messages.received' && webhookData.data && webhookData.data.messages) {
+      // Wasender API format
+      const msg = webhookData.data.messages;
+      const key = msg.key || {};
       
+      // Check if it's an incoming message (fromMe: false)
+      if (key.fromMe === false) {
+        // Get phone number from key - prefer cleanedSenderPn, then senderPn, then remoteJid
+        fromNumber = key.cleanedSenderPn || key.senderPn || key.remoteJid || '';
+        // Remove @s.whatsapp.net or @lid if present
+        fromNumber = fromNumber.replace('@s.whatsapp.net', '').replace('@lid', '').replace('@', '');
+        
+        // Get message text - prefer messageBody, then message.conversation
+        messageText = msg.messageBody || msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+        
+        messageKey = key;
+      } else {
+        // This is a sent message, skip it
+        return res.json({ success: true, message: 'Sent message, skipping' });
+      }
+    } else {
+      // Fallback to old format for compatibility
+      const messageData = webhookData.data || webhookData.message || webhookData;
+      fromNumber = messageData.from || messageData.phone_number || messageData.number || '';
+      messageText = messageData.body?.body || messageData.body || messageData.text || '';
+      
+      // Only process if not a sent message
+      if (messageData.from_me === true || messageData.fromMe === true) {
+        return res.json({ success: true, message: 'Sent message, skipping' });
+      }
+    }
+    
+    // Only process incoming messages
+    if (event === 'messages.received' || (fromNumber && messageText)) {
       if (!fromNumber) {
         console.log('⚠️  No phone number in incoming message');
         return res.json({ success: true, message: 'No phone number' });
@@ -1283,18 +1317,33 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
       
       console.log(`📨 Message from ${normalizedPhone}: ${messageText.substring(0, 100)}...`);
       
+      // Format the body to match what the monitor expects (Wasender API format)
+      const formattedBody = {
+        from: fromNumber,
+        phone_number: normalizedPhone,
+        number: normalizedPhone,
+        body: messageText,
+        text: messageText,
+        type: 'text',
+        from_me: false,
+        id: messageKey?.id || null,
+        timestamp: webhookData.timestamp || Math.floor(Date.now() / 1000),
+        chat_id: messageKey?.remoteJid || null,
+        message: {
+          body: messageText,
+          conversation: messageText
+        },
+        // Include original Wasender format for reference
+        _wasender: webhookData.data?.messages || null
+      };
+      
       // Check if we've sent a message to this number (check cloudtalk_calls table)
       const { data: calls, error: callsError } = await supabase
         .from('cloudtalk_calls')
         .select('id, phone_number, electricity_bill_received')
         .or(`phone_number.eq.${normalizedPhone},phone_number.eq.+${normalizedPhone},phone_number.eq.39${normalizedPhone},phone_number.like.%${normalizedPhone}%`);
       
-      if (callsError) {
-        console.error('Error querying cloudtalk_calls:', callsError);
-        return res.json({ success: true, message: 'Error querying database' });
-      }
-      
-      if (calls && calls.length > 0) {
+      if (!callsError && calls && calls.length > 0) {
         // Found calls for this number - update electricity_bill_received to true
         const callIds = calls.map(call => call.id);
         
@@ -1312,30 +1361,36 @@ app.post('/api/whatsapp-webhook', async (req, res) => {
         } else {
           console.log(`✅ Updated electricity_bill_received=true for ${callIds.length} call(s) from ${normalizedPhone}`);
         }
-        
-        // Also save the incoming message to webhook_requests for tracking
-        try {
-          await supabase
-            .from('webhook_requests')
-            .insert([{
-              method: 'POST',
-              path: '/api/whatsapp-webhook',
-              url: req.url,
-              headers: req.headers,
-              body: webhookData,
-              raw_body: JSON.stringify(webhookData),
-              ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
-              user_agent: req.get('user-agent') || 'Wasender-Webhook',
-              timestamp: new Date().toISOString(),
-              is_cloudtalk: false,
-              created_at: new Date().toISOString()
-            }]);
-        } catch (saveError) {
-          console.error('Error saving webhook:', saveError);
-        }
+      } else if (callsError) {
+        console.error('Error querying cloudtalk_calls:', callsError);
       } else {
         console.log(`ℹ️  Message from ${normalizedPhone} but no matching calls found`);
       }
+      
+      // Always save the incoming message to webhook_requests for tracking (so it shows in monitor)
+      try {
+        await supabase
+          .from('webhook_requests')
+          .insert([{
+            method: 'POST',
+            path: '/api/whatsapp-webhook',
+            url: req.url,
+            headers: req.headers,
+            body: formattedBody,
+            raw_body: JSON.stringify(webhookData),
+            ip_address: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+            user_agent: req.get('user-agent') || 'Wasender-Webhook',
+            timestamp: new Date().toISOString(),
+            is_cloudtalk: false,
+            created_at: new Date().toISOString()
+          }]);
+        console.log(`✅ Saved incoming message to database from ${normalizedPhone}`);
+      } catch (saveError) {
+        console.error('Error saving webhook:', saveError);
+      }
+    } else {
+      // Event is not messages.received or no valid data, but still acknowledge
+      console.log('ℹ️  Webhook received but not a messages.received event:', event);
     }
     
     res.json({ success: true, message: 'Webhook processed' });
