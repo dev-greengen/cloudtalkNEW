@@ -1816,9 +1816,11 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
         
         let response;
         let lastError;
+        let lastErrorDetails = null;
         
         for (const messagesEndpoint of possibleEndpoints) {
           console.log(`🌐 Attempting to fetch from Wasender: ${messagesEndpoint}`);
+          console.log(`🔑 Using token: ${whatsappToken ? whatsappToken.substring(0, 20) + '...' : 'NOT SET'}`);
           try {
             response = await fetch(messagesEndpoint, {
               method: 'GET',
@@ -1831,18 +1833,43 @@ app.get('/api/whatsapp-incoming', async (req, res) => {
             
             // If we get a response (even if error status), this endpoint exists
             console.log(`✅ Got response from ${messagesEndpoint}, status: ${response.status}`);
+            
+            // Check if it's an error status
+            if (!response.ok) {
+              const errorText = await response.text().catch(() => 'Could not read error response');
+              console.error(`❌ HTTP error ${response.status} from ${messagesEndpoint}:`, errorText.substring(0, 200));
+              lastError = new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+              lastErrorDetails = { status: response.status, body: errorText.substring(0, 200) };
+              // Continue to next endpoint
+              continue;
+            }
+            
             break; // Success, exit loop
           } catch (fetchErr) {
-            console.log(`❌ Fetch failed for ${messagesEndpoint}:`, fetchErr.message);
+            console.error(`❌ Fetch failed for ${messagesEndpoint}:`, fetchErr.message);
+            console.error(`❌ Error type:`, fetchErr.constructor.name);
+            console.error(`❌ Error code:`, fetchErr.code);
+            console.error(`❌ Error cause:`, fetchErr.cause);
+            if (fetchErr.stack) {
+              console.error(`❌ Error stack:`, fetchErr.stack.split('\n').slice(0, 3).join('\n'));
+            }
             lastError = fetchErr;
+            lastErrorDetails = {
+              message: fetchErr.message,
+              code: fetchErr.code,
+              type: fetchErr.constructor.name
+            };
             // Continue to next endpoint
             continue;
           }
         }
         
-        // If all endpoints failed, throw the last error
+        // If all endpoints failed, log detailed error and throw
         if (!response) {
           console.error('❌ All Wasender API endpoints failed');
+          console.error('❌ Last error details:', JSON.stringify(lastErrorDetails, null, 2));
+          console.error('❌ Base URL used:', whatsappUrl);
+          console.error('❌ Token present:', !!whatsappToken);
           throw lastError || new Error('All Wasender API endpoints failed');
         }
         
