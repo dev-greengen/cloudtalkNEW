@@ -138,11 +138,11 @@ async function saveRequestToDB(requestData) {
         const callData = await saveCloudTalkCallData(webhookId, bodyToProcess);
         
         if (callData) {
-          console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}`);
+          console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}, shouldSend: ${callData.should_send} (ignored - always send if phone exists)`);
         
         // Automatically send WhatsApp if phone number is present (always send, ignore shouldSend flag)
           if (callData.phone_number) {
-            console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}...`);
+            console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}... (shouldSend flag is ignored - sending always)`);
             try {
               const result = await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
               if (result.success) {
