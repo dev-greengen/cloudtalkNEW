@@ -866,7 +866,8 @@ app.use(async (req, res, next) => {
   if (requests.length > 100) requests.pop(); // Keep last 100 requests
   
   // Save to database ONLY for POST requests (async, don't wait)
-  if (req.method === 'POST') {
+  // Skip CloudTalk webhooks - they are handled by the dedicated endpoint to avoid duplication
+  if (req.method === 'POST' && req.path !== '/webhook/cloudtalk') {
     console.log(`📥 POST request received: ${req.path}`);
     console.log(`📋 Body type: ${typeof req.body}, is object: ${typeof req.body === 'object'}`);
     if (req.body && typeof req.body === 'object') {
