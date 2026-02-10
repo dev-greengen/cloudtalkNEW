@@ -1288,8 +1288,11 @@ app.post('/api/send-whatsapp', async (req, res) => {
     console.log(`📤 Sending WhatsApp to ${normalizedPhone} (original: ${phone_number})`);
     
     // Send WhatsApp message via Wasender API
-    // Wasender endpoint for sending messages - adjust if different
-    const sendEndpoint = `${whatsappUrl}/api/send`;
+    // Wasender endpoint: POST https://www.wasenderapi.com/api/send-message
+    // If URL already ends with /api, don't add it again
+    const baseUrl = whatsappUrl.endsWith('/api') ? whatsappUrl : whatsappUrl;
+    const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
+    const sendEndpoint = `${baseUrl}${apiPrefix}/send-message`;
     const response = await fetch(sendEndpoint, {
       method: 'POST',
       headers: {
