@@ -88,10 +88,12 @@ async function saveRequestToDB(requestData) {
     console.log(`💾 Attempting to insert into webhook_requests table...`);
     let data, error;
     try {
+      console.log(`💾 Calling Supabase insert...`);
       const result = await supabase
       .from('webhook_requests')
       .insert([dbRecord])
       .select();
+      console.log(`💾 Supabase insert result received. Has data: ${!!result?.data}, has error: ${!!result?.error}`);
       data = result.data;
       error = result.error;
     } catch (fetchError) {
@@ -118,8 +120,9 @@ async function saveRequestToDB(requestData) {
       return;
     }
     
+    console.log(`💾 Database insert successful. Data:`, data ? JSON.stringify(data, null, 2).substring(0, 200) : 'null');
     const webhookId = data?.[0]?.id;
-    console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''} - ID: ${webhookId}`);
+    console.log(`✅ Saved request to DB: ${requestData.method} ${requestData.path}${isCloudTalk ? ' (CloudTalk)' : ''} - ID: ${webhookId || 'NO ID RETURNED'}`);
     
     // If it's a CloudTalk webhook and we have a body, save to cloudtalk_calls table
     // Note: Database trigger also handles this automatically, but we do it here too for immediate processing
