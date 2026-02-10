@@ -316,7 +316,7 @@ Grazie e buona giornata.`;
         },
         body: JSON.stringify({
           to: normalizedPhone,
-          body: message
+          text: message
         }),
         signal: AbortSignal.timeout(10000) // 10 second timeout
       });
@@ -1301,7 +1301,7 @@ app.post('/api/send-whatsapp', async (req, res) => {
       },
       body: JSON.stringify({
         to: normalizedPhone,
-        body: message
+        text: message
       })
     });
     
