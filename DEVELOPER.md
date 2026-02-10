@@ -1,30 +1,30 @@
-# Documentazione Sviluppatore - Sistema CloudTalk + WhatsApp
+# Developer Documentation - CloudTalk + WhatsApp System
 
-## 📁 Struttura del Progetto
+## 📁 Project Structure
 
 ```
 cloudtalkNEW/
-├── server.js              # Server principale Express.js (tutto il codice)
-├── db.js                  # Client Supabase e configurazione database
-├── vercel.json            # Configurazione deployment Vercel
-├── package.json           # Dipendenze Node.js
+├── server.js              # Main Express.js server (all code)
+├── db.js                  # Supabase client and database configuration
+├── vercel.json            # Vercel deployment configuration
+├── package.json           # Node.js dependencies
 ├── supabase/
 │   └── functions/
 │       └── webhook/
-│           └── index.ts   # Edge Function Supabase (non usato attualmente)
-└── *.sql                  # Script SQL per setup database
+│           └── index.ts   # Supabase Edge Function (currently unused)
+└── *.sql                  # SQL scripts for database setup
 ```
 
-## 🏗️ Architettura
+## 🏗️ Architecture
 
-### Stack Tecnologico
+### Technology Stack
 - **Runtime**: Node.js (ES Modules)
 - **Framework**: Express.js
 - **Database**: Supabase (PostgreSQL)
 - **Deployment**: Vercel (Serverless Functions)
-- **API Esterna**: Wasender (WhatsApp API)
+- **External API**: Wasender (WhatsApp API)
 
-### Flusso Dati
+### Data Flow
 
 ```
 CloudTalk → POST /webhook/cloudtalk → saveRequestToDB() → saveCloudTalkCallData() → sendWhatsAppMessage()
@@ -32,85 +32,85 @@ CloudTalk → POST /webhook/cloudtalk → saveRequestToDB() → saveCloudTalkCal
 Wasender → POST /api/whatsapp-webhook → Update electricity_bill_received → Save to webhook_requests
 ```
 
-## 📂 File Principali
+## 📂 Main Files
 
-### `server.js` (2295 righe)
+### `server.js` (2295 lines)
 
-File principale che contiene tutto il codice del server. Organizzato in sezioni:
+Main file containing all server code. Organized in sections:
 
-#### 1. **Setup e Middleware** (righe 1-20)
-- Import dipendenze
-- Configurazione Express
-- Parsing JSON e text
+#### 1. **Setup and Middleware** (lines 1-20)
+- Import dependencies
+- Express configuration
+- JSON and text parsing
 
-#### 2. **Funzioni Database** (righe 22-250)
-- **`saveRequestToDB(requestData)`** (riga 22)
-  - Salva tutti i webhook in `webhook_requests`
-  - Rileva automaticamente se è un webhook CloudTalk
-  - Processa webhook CloudTalk e invia WhatsApp
+#### 2. **Database Functions** (lines 22-250)
+- **`saveRequestToDB(requestData)`** (line 22)
+  - Saves all webhooks to `webhook_requests`
+  - Automatically detects if it's a CloudTalk webhook
+  - Processes CloudTalk webhooks and sends WhatsApp
   
-- **`saveCloudTalkCallData(webhookRequestId, body)`** (riga 178)
-  - Salva dati chiamata in `cloudtalk_calls`
-  - Normalizza i dati da CloudTalk
-  - Gestisce duplicati
+- **`saveCloudTalkCallData(webhookRequestId, body)`** (line 178)
+  - Saves call data to `cloudtalk_calls`
+  - Normalizes data from CloudTalk
+  - Handles duplicates
 
-#### 3. **Funzioni WhatsApp** (riga 254-400)
-- **`sendWhatsAppMessage(phoneNumber, webhookRequestId, callId)`** (riga 254)
-  - Invia messaggio via API Wasender
+#### 3. **WhatsApp Functions** (line 254-400)
+- **`sendWhatsAppMessage(phoneNumber, webhookRequestId, callId)`** (line 254)
+  - Sends message via Wasender API
   - Endpoint: `POST https://www.wasenderapi.com/api/send-message`
-  - Payload: `{ to: "393209793492", text: "messaggio" }`
-  - Salva messaggio inviato in `webhook_requests` con `from_me: true`
+  - Payload: `{ to: "393209793492", text: "message" }`
+  - Saves sent message to `webhook_requests` with `from_me: true`
 
-#### 4. **Monitor Page** (riga 437-841)
-- **`GET /monitor`** - Interfaccia web HTML con JavaScript
-- Auto-refresh ogni 5 secondi
-- Mostra messaggi in arrivo e inviati
-- Usa `/api/whatsapp-incoming` per ottenere i dati
+#### 4. **Monitor Page** (line 437-841)
+- **`GET /monitor`** - HTML web interface with JavaScript
+- Auto-refresh every 5 seconds
+- Shows incoming and sent messages
+- Uses `/api/whatsapp-incoming` to get data
 
-#### 5. **Middleware Request Capture** (riga 844-882)
-- Cattura tutte le richieste POST
-- **IMPORTANTE**: Salta `/webhook/cloudtalk` per evitare duplicazioni
-- Salva in memoria e database
+#### 5. **Request Capture Middleware** (line 844-882)
+- Captures all POST requests
+- **IMPORTANT**: Skips `/webhook/cloudtalk` to avoid duplication
+- Saves to memory and database
 
-#### 6. **Endpoint Webhook CloudTalk** (riga 1015-1060)
+#### 6. **CloudTalk Webhook Endpoint** (line 1015-1060)
 - **`POST /webhook/cloudtalk`**
-- Riceve dati chiamate da CloudTalk
-- Chiama `saveRequestToDB()` che processa tutto
-- Risponde con JSON di conferma
+- Receives call data from CloudTalk
+- Calls `saveRequestToDB()` which processes everything
+- Responds with confirmation JSON
 
-#### 7. **Endpoint Webhook Wasender** (riga 1387-1558)
+#### 7. **Wasender Webhook Endpoint** (line 1387-1558)
 - **`POST /api/whatsapp-webhook`**
-- Verifica webhook secret
-- Estrae numero mittente e testo messaggio
-- **Aggiorna `electricity_bill_received = true`** se trova corrispondenza in `cloudtalk_calls`
-- Salva messaggio in `webhook_requests`
+- Verifies webhook secret
+- Extracts sender number and message text
+- **Updates `electricity_bill_received = true`** if match found in `cloudtalk_calls`
+- Saves message to `webhook_requests`
 
-#### 8. **API Endpoints** (varie righe)
-- **`GET /api/whatsapp-incoming`** (riga 1828) - Messaggi per il monitor
-- **`GET /api/cloudtalk-calls`** (riga 1119) - Lista chiamate
-- **`POST /api/send-whatsapp`** (riga 1257) - Invio manuale WhatsApp
-- Altri endpoint per debugging e gestione
+#### 8. **API Endpoints** (various lines)
+- **`GET /api/whatsapp-incoming`** (line 1828) - Messages for monitor
+- **`GET /api/cloudtalk-calls`** (line 1119) - Call list
+- **`POST /api/send-whatsapp`** (line 1257) - Manual WhatsApp sending
+- Other endpoints for debugging and management
 
-### `db.js` (76 righe)
+### `db.js` (76 lines)
 
-- Inizializza client Supabase
-- Gestisce mancanza di credenziali con mock client
-- Timeout 10 secondi per fetch
-- Logging dettagliato delle chiamate
+- Initializes Supabase client
+- Handles missing credentials with mock client
+- 10 second timeout for fetch
+- Detailed logging of calls
 
-### `vercel.json` (27 righe)
+### `vercel.json` (27 lines)
 
-- Configurazione deployment Vercel
+- Vercel deployment configuration
 - Route mapping
-- Variabili d'ambiente (da spostare in Vercel dashboard per sicurezza)
+- Environment variables (should be moved to Vercel dashboard for security)
 
-## 🔧 Modifiche Comuni
+## 🔧 Common Modifications
 
-### Modificare il Messaggio WhatsApp
+### Modify WhatsApp Message
 
 **File**: `server.js`  
-**Funzione**: `sendWhatsAppMessage()` (riga 254)  
-**Riga da modificare**: ~278
+**Function**: `sendWhatsAppMessage()` (line 254)  
+**Line to modify**: ~278
 
 ```javascript
 const message = `Buongiorno, sono Samuela della Greengen Group.
@@ -122,39 +122,39 @@ Può inviarmele quando le ha a disposizione?
 Grazie e buona giornata.`;
 ```
 
-### Modificare la Logica di Invio
+### Modify Sending Logic
 
 **File**: `server.js`  
-**Funzione**: `saveRequestToDB()` (riga 22)  
-**Sezione**: righe 143-160
+**Function**: `saveRequestToDB()` (line 22)  
+**Section**: lines 143-160
 
-Attualmente invia sempre se c'è un numero. Per aggiungere condizioni:
+Currently sends always if there's a number. To add conditions:
 
 ```javascript
 if (callData.phone_number && callData.should_send === true) {
-  // Invia solo se should_send è true
+  // Send only if should_send is true
 }
 ```
 
-### Modificare il Monitor
+### Modify Monitor
 
 **File**: `server.js`  
-**Endpoint**: `GET /monitor` (riga 437)  
-**Sezione**: righe 437-841
+**Endpoint**: `GET /monitor` (line 437)  
+**Section**: lines 437-841
 
-L'HTML è in un template string. Modifica:
-- Stile CSS (righe ~450-550)
-- JavaScript per refresh (righe ~600-830)
-- Layout HTML (righe ~550-600)
+HTML is in a template string. Modify:
+- CSS styles (lines ~450-550)
+- JavaScript for refresh (lines ~600-830)
+- HTML layout (lines ~550-600)
 
-### Aggiungere Nuovo Endpoint
+### Add New Endpoint
 
-Aggiungi dopo gli altri endpoint (dopo riga 2200):
+Add after other endpoints (after line 2200):
 
 ```javascript
-app.get('/api/nuovo-endpoint', async (req, res) => {
+app.get('/api/new-endpoint', async (req, res) => {
   try {
-    // Il tuo codice qui
+    // Your code here
     res.json({ success: true, data: result });
   } catch (error) {
     console.error('Error:', error);
@@ -163,12 +163,12 @@ app.get('/api/nuovo-endpoint', async (req, res) => {
 });
 ```
 
-### Modificare la Query Database
+### Modify Database Query
 
 **File**: `server.js`  
-Cerca le chiamate a `supabase.from('nome_tabella')`
+Search for calls to `supabase.from('table_name')`
 
-Esempio per modificare query `cloudtalk_calls`:
+Example to modify `cloudtalk_calls` query:
 
 ```javascript
 const { data, error } = await supabase
@@ -179,9 +179,249 @@ const { data, error } = await supabase
   .limit(10);
 ```
 
-## 🗄️ Schema Database
+## 📞 Making Calls with CloudTalk API
 
-### Tabella `webhook_requests`
+### Overview
+
+CloudTalk API allows you to initiate outbound calls programmatically. This section explains how to integrate CloudTalk API calls into your system.
+
+### Prerequisites
+
+1. **CloudTalk API Credentials**
+   - Get your API key from CloudTalk dashboard
+   - API endpoint: `https://api.cloudtalk.io/api/v1/`
+   - Authentication: Bearer token in Authorization header
+
+2. **Environment Variables**
+   Add to your Vercel environment variables:
+   ```
+   CLOUDTALK_API_KEY=your_api_key_here
+   CLOUDTALK_API_URL=https://api.cloudtalk.io/api/v1
+   ```
+
+### Making a Call
+
+#### Basic Call Example
+
+```javascript
+// Add this function to server.js
+async function makeCloudTalkCall(phoneNumber, agentId = null) {
+  try {
+    const apiKey = process.env.CLOUDTALK_API_KEY;
+    const apiUrl = process.env.CLOUDTALK_API_URL || 'https://api.cloudtalk.io/api/v1';
+    
+    if (!apiKey) {
+      throw new Error('CLOUDTALK_API_KEY not configured');
+    }
+    
+    // CloudTalk API endpoint for making calls
+    const response = await fetch(`${apiUrl}/calls`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        phone_number: phoneNumber,  // Format: +393209793492
+        agent_id: agentId,           // Optional: specific agent ID
+        // Additional options:
+        // caller_id: '+391234567890',  // Caller ID to display
+        // recording: true,              // Record the call
+        // tags: ['outbound', 'followup'] // Tags for organization
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(`CloudTalk API error: ${error.message || response.statusText}`);
+    }
+    
+    const result = await response.json();
+    console.log(`✅ Call initiated to ${phoneNumber}, Call ID: ${result.call_id}`);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Error making CloudTalk call:', error.message);
+    throw error;
+  }
+}
+```
+
+#### Advanced Call with Custom Data
+
+```javascript
+async function makeCloudTalkCallAdvanced(phoneNumber, options = {}) {
+  const apiKey = process.env.CLOUDTALK_API_KEY;
+  const apiUrl = process.env.CLOUDTALK_API_URL || 'https://api.cloudtalk.io/api/v1';
+  
+  const payload = {
+    phone_number: phoneNumber,
+    agent_id: options.agentId || null,
+    caller_id: options.callerId || null,
+    recording: options.recording !== false, // Default: true
+    tags: options.tags || [],
+    custom_data: options.customData || {}, // Custom data passed to webhook
+    // Schedule for later (optional):
+    // scheduled_at: '2024-02-15T10:00:00Z',
+  };
+  
+  const response = await fetch(`${apiUrl}/calls`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  
+  return await response.json();
+}
+```
+
+### Adding an Endpoint to Make Calls
+
+Add this endpoint to `server.js` (after line 2200):
+
+```javascript
+// Endpoint to initiate CloudTalk calls
+app.post('/api/make-call', async (req, res) => {
+  try {
+    const { phone_number, agent_id, caller_id, tags } = req.body;
+    
+    if (!phone_number) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'phone_number is required' 
+      });
+    }
+    
+    const result = await makeCloudTalkCall(phone_number, agent_id);
+    
+    // Optionally save to database
+    await supabase
+      .from('cloudtalk_calls')
+      .insert([{
+        call_id: result.call_id,
+        phone_number: phone_number,
+        status: 'initiated',
+        direction: 'outbound',
+        agent_id: agent_id || null,
+        raw_data: result
+      }]);
+    
+    res.json({ 
+      success: true, 
+      message: 'Call initiated successfully',
+      data: result 
+    });
+    
+  } catch (error) {
+    console.error('Error making call:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+```
+
+### Testing CloudTalk API Calls
+
+#### Using cURL
+
+```bash
+# Basic call
+curl -X POST https://api.cloudtalk.io/api/v1/calls \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number": "+393209793492",
+    "agent_id": 12345
+  }'
+
+# Call with custom data
+curl -X POST https://api.cloudtalk.io/api/v1/calls \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "phone_number": "+393209793492",
+    "agent_id": 12345,
+    "recording": true,
+    "tags": ["followup", "important"],
+    "custom_data": {
+      "customer_id": "123",
+      "order_id": "456"
+    }
+  }'
+```
+
+#### Using Node.js
+
+```javascript
+// Test locally
+const response = await fetch('http://localhost:3000/api/make-call', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    phone_number: '+393209793492',
+    agent_id: 12345
+  })
+});
+
+const result = await response.json();
+console.log(result);
+```
+
+### Call Status and Webhooks
+
+After initiating a call, CloudTalk will send webhooks to your `/webhook/cloudtalk` endpoint for:
+- **Call Started**: When the call begins
+- **Call Answered**: When the customer answers
+- **Call Ended**: When the call finishes (this is what triggers WhatsApp sending)
+
+The webhook payload includes:
+```json
+{
+  "call_id": "call_123456",
+  "phone_number": "+393209793492",
+  "status": "completed",
+  "duration": 120,
+  "direction": "outbound",
+  "agent_id": 12345,
+  "recording_url": "https://...",
+  "custom_data": {
+    "customer_id": "123"
+  }
+}
+```
+
+### Best Practices
+
+1. **Error Handling**: Always wrap API calls in try/catch
+2. **Rate Limiting**: CloudTalk has rate limits - implement retry logic
+3. **Phone Number Format**: Always use E.164 format (+393209793492)
+4. **Logging**: Log all call attempts for debugging
+5. **Webhook Verification**: Verify webhook signatures if available
+
+### Common Issues
+
+**Error: "Invalid phone number"**
+- Ensure phone number is in E.164 format (+country code + number)
+- Remove spaces, dashes, and parentheses
+
+**Error: "Agent not found"**
+- Verify agent_id exists in your CloudTalk account
+- Use null to let CloudTalk assign automatically
+
+**Error: "Rate limit exceeded"**
+- Implement exponential backoff
+- Queue calls if needed
+
+## 🗄️ Database Schema
+
+### `webhook_requests` Table
 
 ```sql
 - id (bigint, primary key)
@@ -204,7 +444,7 @@ const { data, error } = await supabase
 - created_at (timestamp)
 ```
 
-### Tabella `cloudtalk_calls`
+### `cloudtalk_calls` Table
 
 ```sql
 - id (bigint, primary key)
@@ -230,7 +470,7 @@ const { data, error } = await supabase
 - ateco_code (text)
 - ateco_eligible (boolean)
 - interest_confirmed (boolean)
-- electricity_bill_received (boolean) ⭐ IMPORTANTE
+- electricity_bill_received (boolean) ⭐ IMPORTANT
 - annual_consumption_kwh (integer)
 - should_send (boolean)
 - reason (text)
@@ -240,7 +480,7 @@ const { data, error } = await supabase
 
 ## 🔍 Debugging
 
-### Log Importanti da Cercare
+### Important Logs to Look For
 
 **CloudTalk Webhook**:
 ```
@@ -253,76 +493,81 @@ const { data, error } = await supabase
 **Wasender Webhook**:
 ```
 📥 Incoming WhatsApp webhook
-📨 Message from 393209793492: [testo]
+📨 Message from 393209793492: [text]
 ✅ Updated electricity_bill_received=true for X call(s) from 393209793492
 ```
 
-**Errori Comuni**:
+**Common Errors**:
 ```
-❌ WhatsApp send failed: [errore]
-❌ Error updating electricity_bill_received: [errore]
-❌ Fetch failed for [URL]: [errore]
+❌ WhatsApp send failed: [error]
+❌ Error updating electricity_bill_received: [error]
+❌ Fetch failed for [URL]: [error]
 ```
 
-### Test Locale
+### Local Testing
 
 ```bash
-# Avvia server locale
+# Start local server
 npm run dev
 
-# Test webhook CloudTalk
+# Test CloudTalk webhook
 curl -X POST http://localhost:3000/webhook/cloudtalk \
   -H "Content-Type: application/json" \
   -d '{"data": {"callId": "test", "phoneNumber": "+393209793492", "shouldSend": true}}'
 
-# Test webhook Wasender
+# Test Wasender webhook
 curl -X POST http://localhost:3000/api/whatsapp-webhook \
   -H "Content-Type: application/json" \
   -H "X-Webhook-Secret: [secret]" \
   -d '{"event": "messages.received", "data": {"messages": {"key": {"fromMe": false, "cleanedSenderPn": "393209793492"}, "messageBody": "test"}}}'
+
+# Test making a call
+curl -X POST http://localhost:3000/api/make-call \
+  -H "Content-Type: application/json" \
+  -d '{"phone_number": "+393209793492", "agent_id": 12345}'
 ```
 
-## 🚨 Problemi Conosciuti e Soluzioni
+## 🚨 Known Issues and Solutions
 
-### 1. Duplicazione Webhook CloudTalk
+### 1. CloudTalk Webhook Duplication
 
-**Problema**: Webhook processato due volte  
-**Causa**: Middleware e endpoint processano entrambi  
-**Soluzione**: Middleware salta `/webhook/cloudtalk` (riga 869)
+**Problem**: Webhook processed twice  
+**Cause**: Middleware and endpoint both process it  
+**Solution**: Middleware skips `/webhook/cloudtalk` (line 869)
 
-### 2. Rate Limit Wasender (429)
+### 2. Wasender Rate Limit (429)
 
-**Problema**: "You can send 1 message every 1 minute"  
-**Causa**: Piano trial limitato  
-**Soluzione**: Aspettare 60 secondi tra messaggi o upgrade piano
+**Problem**: "You can send 1 message every 1 minute"  
+**Cause**: Limited trial plan  
+**Solution**: Wait 60 seconds between messages or upgrade plan
 
-### 3. Campo `text` vs `body` in Wasender
+### 3. `text` vs `body` Field in Wasender
 
-**Problema**: Errore 422 "text field is required"  
-**Causa**: Wasender richiede `text`, non `body`  
-**Soluzione**: Usare `text: message` nel payload (già corretto)
+**Problem**: Error 422 "text field is required"  
+**Cause**: Wasender requires `text`, not `body`  
+**Solution**: Use `text: message` in payload (already fixed)
 
 ### 4. SSL/TLS Errors
 
-**Problema**: "SSL routines:ssl3_read_bytes:tlsv1 unrecognized name"  
-**Causa**: URL API Wasender errato  
-**Soluzione**: Usare `https://www.wasenderapi.com/api`
+**Problem**: "SSL routines:ssl3_read_bytes:tlsv1 unrecognized name"  
+**Cause**: Incorrect Wasender API URL  
+**Solution**: Use `https://www.wasenderapi.com/api`
 
 ## 📝 Best Practices
 
-1. **Sempre loggare errori** con `console.error()`
-2. **Gestire timeout** per chiamate esterne (10 secondi)
-3. **Validare input** prima di processare
-4. **Usare try/catch** per tutte le operazioni async
-5. **Non bloccare risposte** - usare `await` solo quando necessario
-6. **Testare webhook** con curl prima di deployare
+1. **Always log errors** with `console.error()`
+2. **Handle timeouts** for external calls (10 seconds)
+3. **Validate input** before processing
+4. **Use try/catch** for all async operations
+5. **Don't block responses** - use `await` only when necessary
+6. **Test webhooks** with curl before deploying
 
-## 🔐 Sicurezza
+## 🔐 Security
 
-- **Webhook Secret**: Sempre verificare per Wasender
-- **Environment Variables**: Non committare in git
-- **Input Validation**: Validare tutti gli input
-- **Rate Limiting**: Considerare rate limiting per produzione
+- **Webhook Secret**: Always verify for Wasender
+- **Environment Variables**: Don't commit to git
+- **Input Validation**: Validate all inputs
+- **Rate Limiting**: Consider rate limiting for production
 
 ## 🚀 Deployment
 
@@ -332,7 +577,7 @@ curl -X POST http://localhost:3000/api/whatsapp-webhook \
 # Deploy
 vercel --prod
 
-# Variabili d'ambiente vanno configurate in Vercel Dashboard
+# Environment variables should be configured in Vercel Dashboard
 # Settings → Environment Variables
 ```
 
@@ -340,22 +585,22 @@ vercel --prod
 
 ```bash
 git add .
-git commit -m "Descrizione modifica"
-git push  # Auto-deploy su Vercel
+git commit -m "Description of change"
+git push  # Auto-deploy to Vercel
 ```
 
-## 📚 Risorse
+## 📚 Resources
 
 - [Express.js Docs](https://expressjs.com/)
 - [Supabase Docs](https://supabase.com/docs)
 - [Wasender API Docs](https://wasenderapi.com/api-docs)
+- [CloudTalk API Docs](https://www.cloudtalk.io/api-documentation)
 - [Vercel Docs](https://vercel.com/docs)
 
-## 🐛 Reporting Bug
+## 🐛 Bug Reporting
 
-Quando segnali un bug, includi:
-1. Log completi da Vercel
-2. Payload del webhook (senza dati sensibili)
-3. Timestamp dell'errore
-4. Descrizione di cosa stavi facendo
-
+When reporting a bug, include:
+1. Complete logs from Vercel
+2. Webhook payload (without sensitive data)
+3. Error timestamp
+4. Description of what you were doing

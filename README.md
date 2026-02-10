@@ -1,94 +1,94 @@
-# Sistema CloudTalk + WhatsApp Integration
+# CloudTalk + WhatsApp Integration System
 
-## 📋 Panoramica
+## 📋 Overview
 
-Questo sistema integra **CloudTalk** (sistema di chiamate) con **Wasender** (API WhatsApp) per automatizzare l'invio di messaggi WhatsApp dopo le chiamate e tracciare le risposte dei clienti.
+This system integrates **CloudTalk** (call system) with **Wasender** (WhatsApp API) to automate sending WhatsApp messages after calls and track customer responses.
 
-## 🎯 Cosa fa il sistema
+## 🎯 What the system does
 
-### 1. **Ricezione Chiamate CloudTalk**
-- CloudTalk invia un webhook quando una chiamata finisce
-- Il sistema salva automaticamente i dati della chiamata nel database
+### 1. **CloudTalk Call Reception**
+- CloudTalk sends a webhook when a call ends
+- The system automatically saves call data to the database
 
-### 2. **Invio Automatico WhatsApp**
-- Dopo ogni chiamata, se c'è un numero di telefono, il sistema invia automaticamente un messaggio WhatsApp
-- Il messaggio chiede al cliente di inviare la bolletta elettrica
+### 2. **Automatic WhatsApp Sending**
+- After each call, if there's a phone number, the system automatically sends a WhatsApp message
+- The message asks the customer to send their electricity bill
 
-### 3. **Tracciamento Risposte**
-- Quando un cliente risponde via WhatsApp, il sistema aggiorna automaticamente il campo `electricity_bill_received = true`
-- Questo indica che il cliente ha risposto e probabilmente ha inviato la bolletta
+### 3. **Response Tracking**
+- When a customer responds via WhatsApp, the system automatically updates the `electricity_bill_received = true` field
+- This indicates that the customer has responded and likely sent the bill
 
-### 4. **Monitor in Tempo Reale**
-- Interfaccia web per vedere tutti i messaggi WhatsApp (inviati e ricevuti) in tempo reale
-- Accessibile all'indirizzo: `https://tuo-dominio.vercel.app/monitor`
+### 4. **Real-time Monitor**
+- Web interface to view all WhatsApp messages (sent and received) in real-time
+- Accessible at: `https://your-domain.vercel.app/monitor`
 
-## 🔄 Flusso Completo
+## 🔄 Complete Flow
 
 ```
-1. Chiamata CloudTalk finisce
+1. CloudTalk call ends
    ↓
-2. CloudTalk invia webhook → /webhook/cloudtalk
+2. CloudTalk sends webhook → /webhook/cloudtalk
    ↓
-3. Sistema salva dati in database (cloudtalk_calls)
+3. System saves data to database (cloudtalk_calls)
    ↓
-4. Sistema invia automaticamente WhatsApp via Wasender
+4. System automatically sends WhatsApp via Wasender
    ↓
-5. Cliente risponde via WhatsApp
+5. Customer responds via WhatsApp
    ↓
-6. Wasender invia webhook → /api/whatsapp-webhook
+6. Wasender sends webhook → /api/whatsapp-webhook
    ↓
-7. Sistema aggiorna electricity_bill_received = true
+7. System updates electricity_bill_received = true
 ```
 
-## 🌐 Endpoint Principali
+## 🌐 Main Endpoints
 
-### Per CloudTalk
-- **`POST /webhook/cloudtalk`** - Riceve i dati delle chiamate da CloudTalk
+### For CloudTalk
+- **`POST /webhook/cloudtalk`** - Receives call data from CloudTalk
 
-### Per Wasender
-- **`POST /api/whatsapp-webhook`** - Riceve i messaggi WhatsApp in arrivo da Wasender
+### For Wasender
+- **`POST /api/whatsapp-webhook`** - Receives incoming WhatsApp messages from Wasender
 
-### Per Monitoraggio
-- **`GET /monitor`** - Interfaccia web per vedere i messaggi in tempo reale
-- **`GET /api/whatsapp-incoming`** - API per ottenere i messaggi (usata dal monitor)
+### For Monitoring
+- **`GET /monitor`** - Web interface to view messages in real-time
+- **`GET /api/whatsapp-incoming`** - API to get messages (used by monitor)
 
 ## 📊 Database
 
-Il sistema usa **Supabase** con queste tabelle principali:
+The system uses **Supabase** with these main tables:
 
-- **`webhook_requests`** - Tutti i webhook ricevuti (CloudTalk e Wasender)
-- **`cloudtalk_calls`** - Dati delle chiamate CloudTalk
-  - `phone_number` - Numero di telefono del cliente
-  - `electricity_bill_received` - Se il cliente ha risposto (true/false)
-  - `should_send` - Se dovrebbe essere inviato un messaggio
-  - Altri campi con dati della chiamata
+- **`webhook_requests`** - All received webhooks (CloudTalk and Wasender)
+- **`cloudtalk_calls`** - CloudTalk call data
+  - `phone_number` - Customer phone number
+  - `electricity_bill_received` - Whether customer responded (true/false)
+  - `should_send` - Whether a message should be sent
+  - Other fields with call data
 
-## ⚙️ Configurazione
+## ⚙️ Configuration
 
-### Variabili d'Ambiente (in Vercel)
+### Environment Variables (in Vercel)
 
-- **`SUPABASE_URL`** - URL del tuo progetto Supabase
-- **`SUPABASE_KEY`** - Chiave pubblica di Supabase
-- **`WHATSAPP_API_TOKEN`** - Token API di Wasender
-- **`WHATSAPP_API_URL`** - URL base dell'API Wasender (es: `https://www.wasenderapi.com/api`)
-- **`WHATSAPP_WEBHOOK_SECRET`** - Secret per verificare i webhook di Wasender
+- **`SUPABASE_URL`** - Your Supabase project URL
+- **`SUPABASE_KEY`** - Supabase public key
+- **`WHATSAPP_API_TOKEN`** - Wasender API token
+- **`WHATSAPP_API_URL`** - Wasender API base URL (e.g., `https://www.wasenderapi.com/api`)
+- **`WHATSAPP_WEBHOOK_SECRET`** - Secret to verify Wasender webhooks
 
-### Configurazione CloudTalk
+### CloudTalk Configuration
 
-1. Vai nelle impostazioni webhook di CloudTalk
-2. Aggiungi l'URL: `https://tuo-dominio.vercel.app/webhook/cloudtalk`
-3. Seleziona l'evento: "Call Ended" o simile
+1. Go to CloudTalk webhook settings
+2. Add URL: `https://your-domain.vercel.app/webhook/cloudtalk`
+3. Select event: "Call Ended" or similar
 
-### Configurazione Wasender
+### Wasender Configuration
 
-1. Vai nelle impostazioni webhook di Wasender
-2. Aggiungi l'URL: `https://tuo-dominio.vercel.app/api/whatsapp-webhook`
-3. Seleziona l'evento: "messages.received"
-4. Imposta il webhook secret (deve corrispondere a `WHATSAPP_WEBHOOK_SECRET`)
+1. Go to Wasender webhook settings
+2. Add URL: `https://your-domain.vercel.app/api/whatsapp-webhook`
+3. Select event: "messages.received"
+4. Set webhook secret (must match `WHATSAPP_WEBHOOK_SECRET`)
 
-## 📱 Messaggio WhatsApp Inviati
+## 📱 WhatsApp Messages Sent
 
-Il sistema invia automaticamente questo messaggio (in italiano):
+The system automatically sends this message (in Italian):
 
 ```
 Buongiorno, sono Samuela della Greengen Group.
@@ -102,51 +102,50 @@ Grazie e buona giornata.
 
 ## 🔍 Monitor
 
-Il monitor è accessibile all'indirizzo `/monitor` e mostra:
+The monitor is accessible at `/monitor` and shows:
 
-- **Messaggi in arrivo** (da clienti)
-- **Messaggi inviati** (dal sistema)
-- **Aggiornamento automatico** ogni 5 secondi
-- **Fonte dati**: API Wasender o Database (fallback)
+- **Incoming messages** (from customers)
+- **Sent messages** (from system)
+- **Automatic refresh** every 5 seconds
+- **Data source**: Wasender API or Database (fallback)
 
 ## 🚀 Deployment
 
-Il sistema è deployato su **Vercel** e si aggiorna automaticamente quando fai push su GitHub.
+The system is deployed on **Vercel** and automatically updates when you push to GitHub.
 
-### Comandi Utili
+### Useful Commands
 
 ```bash
-# Deploy manuale
+# Manual deploy
 vercel --prod
 
-# Test locale
+# Local test
 npm run dev
 ```
 
-## 📝 Note Importanti
+## 📝 Important Notes
 
-- **Rate Limit Wasender**: Il piano trial permette 1 messaggio ogni 60 secondi
-- **Messaggi Duplicati**: Il sistema evita di processare lo stesso webhook due volte
-- **Fallback Database**: Se l'API Wasender fallisce, il monitor usa i dati dal database
+- **Wasender Rate Limit**: Trial plan allows 1 message every 60 seconds
+- **Duplicate Messages**: System avoids processing the same webhook twice
+- **Database Fallback**: If Wasender API fails, monitor uses database data
 
 ## 🆘 Troubleshooting
 
-### I messaggi non vengono inviati
-1. Controlla i log di Vercel per errori
-2. Verifica che `WHATSAPP_API_TOKEN` e `WHATSAPP_API_URL` siano configurati
-3. Controlla il rate limit di Wasender (1 messaggio/minuto nel trial)
+### Messages are not being sent
+1. Check Vercel logs for errors
+2. Verify that `WHATSAPP_API_TOKEN` and `WHATSAPP_API_URL` are configured
+3. Check Wasender rate limit (1 message/minute on trial)
 
-### I messaggi non appaiono nel monitor
-1. Verifica che i webhook di Wasender siano configurati correttamente
-2. Controlla che `WHATSAPP_WEBHOOK_SECRET` corrisponda
-3. Il monitor usa il database come fallback se l'API fallisce
+### Messages don't appear in monitor
+1. Verify Wasender webhooks are configured correctly
+2. Check that `WHATSAPP_WEBHOOK_SECRET` matches
+3. Monitor uses database as fallback if API fails
 
-### electricity_bill_received non si aggiorna
-1. Verifica che il webhook di Wasender sia attivo
-2. Controlla che il numero di telefono nel messaggio corrisponda a quello in `cloudtalk_calls`
-3. Guarda i log per vedere se ci sono errori nell'aggiornamento
+### electricity_bill_received doesn't update
+1. Verify Wasender webhook is active
+2. Check that phone number in message matches the one in `cloudtalk_calls`
+3. Check logs to see if there are update errors
 
-## 📞 Supporto
+## 📞 Support
 
-Per problemi o domande, controlla i log di Vercel o la documentazione per sviluppatori (`DEVELOPER.md`).
-
+For problems or questions, check Vercel logs or developer documentation (`DEVELOPER.md`).
