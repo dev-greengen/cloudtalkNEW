@@ -135,23 +135,29 @@ async function saveRequestToDB(requestData) {
         const callData = await saveCloudTalkCallData(webhookId, bodyToProcess);
         
         if (callData) {
-          console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}`);
+          console.log(`✅ CloudTalk call data saved. Phone: ${callData.phone_number || 'N/A'}, Call ID: ${callData.call_id || 'N/A'}, shouldSend: ${callData.should_send}`);
         
-        // Automatically send WhatsApp if phone number is present
+        // Automatically send WhatsApp if phone number is present AND shouldSend is true
           if (callData.phone_number) {
-            console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}...`);
-            try {
-              const result = await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
-              if (result.success) {
-                console.log(`✅ WhatsApp sent successfully to ${callData.phone_number}`);
-              } else {
-                console.error(`❌ WhatsApp send failed: ${result.error}`);
-              }
-          } catch (whatsappErr) {
-              console.error('❌ Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
-              console.error('❌ Error stack:', whatsappErr.stack);
-            // Don't fail - trigger will queue it as backup
-          }
+            // Check if shouldSend is explicitly false - if so, don't send
+            if (callData.should_send === false) {
+              console.log(`⏭️  Skipping WhatsApp send - shouldSend is false. Reason: ${callData.reason || 'N/A'}`);
+            } else {
+              // shouldSend is true, null, or undefined - send the message
+              console.log(`📱 Attempting to send WhatsApp to ${callData.phone_number}... (shouldSend: ${callData.should_send})`);
+              try {
+                const result = await sendWhatsAppMessage(callData.phone_number, webhookId, callData.call_id);
+                if (result.success) {
+                  console.log(`✅ WhatsApp sent successfully to ${callData.phone_number}`);
+                } else {
+                  console.error(`❌ WhatsApp send failed: ${result.error}`);
+                }
+            } catch (whatsappErr) {
+                console.error('❌ Error sending WhatsApp (will be queued by trigger):', whatsappErr.message);
+                console.error('❌ Error stack:', whatsappErr.stack);
+              // Don't fail - trigger will queue it as backup
+            }
+            }
           } else {
             console.log(`⚠️  No phone number found in call data. Cannot send WhatsApp.`);
           }
