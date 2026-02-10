@@ -348,7 +348,30 @@ Grazie e buona giornata.`;
       throw lastSendError || new Error('All Wasender send endpoints failed');
     }
     
-    const result = await response.json();
+    // Check response content type before parsing JSON
+    const contentType = response.headers.get('content-type') || '';
+    console.log(`📋 Response Content-Type: ${contentType}`);
+    console.log(`📋 Response Status: ${response.status}`);
+    
+    let result;
+    if (contentType.includes('application/json')) {
+      try {
+        result = await response.json();
+      } catch (jsonErr) {
+        const text = await response.text();
+        console.error('❌ Failed to parse JSON response:', jsonErr.message);
+        console.error('❌ Response text (first 500 chars):', text.substring(0, 500));
+        throw new Error(`Invalid JSON response from Wasender API: ${text.substring(0, 100)}`);
+      }
+    } else {
+      // Response is not JSON - probably HTML error page
+      const text = await response.text();
+      console.error('❌ Wasender API returned non-JSON response (probably HTML error page)');
+      console.error('❌ Response status:', response.status);
+      console.error('❌ Response Content-Type:', contentType);
+      console.error('❌ Response text (first 500 chars):', text.substring(0, 500));
+      throw new Error(`Wasender API returned HTML instead of JSON (status: ${response.status}). Check endpoint URL and authentication.`);
+    }
     
     if (response.ok) {
       console.log(`✅ WhatsApp sent successfully to ${normalizedPhone}`);
