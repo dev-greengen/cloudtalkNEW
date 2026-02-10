@@ -297,55 +297,36 @@ Grazie e buona giornata.`;
     console.log(`📤 Auto-sending WhatsApp to ${normalizedPhone} (original: ${phoneNumber})`);
     
     // Send WhatsApp message via Wasender API
-    // Wasender endpoint for sending messages - try multiple possible endpoints
+    // Wasender endpoint: POST https://www.wasenderapi.com/api/send-message
     // If URL already ends with /api, don't add it again
     const baseUrl = whatsappUrl.endsWith('/api') ? whatsappUrl : whatsappUrl;
     const apiPrefix = baseUrl.endsWith('/api') ? '' : '/api';
     
-    const possibleSendEndpoints = [
-      `${baseUrl}${apiPrefix}/send`,
-      `${baseUrl}/send`,
-      `${baseUrl}${apiPrefix}/send-message`,
-      `${baseUrl}/messages/send`,
-      `${baseUrl}/messages/text`
-    ];
+    // Use the correct Wasender API endpoint
+    const sendEndpoint = `${baseUrl}${apiPrefix}/send-message`;
+    console.log(`📤 Sending WhatsApp via Wasender API: ${sendEndpoint}`);
     
-    let sendEndpoint = possibleSendEndpoints[0]; // Default to first
     let response;
-    let lastSendError;
-    
-    // Try each endpoint until one works
-    for (const endpoint of possibleSendEndpoints) {
-      console.log(`📤 Trying to send via: ${endpoint}`);
-      try {
-        response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${whatsappToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        to: normalizedPhone,
-        body: message
-          }),
-          signal: AbortSignal.timeout(10000) // 10 second timeout
-        });
-        
-        console.log(`✅ Got response from ${endpoint}, status: ${response.status}`);
-        sendEndpoint = endpoint; // Use this endpoint
-        break; // Success, exit loop
-      } catch (fetchErr) {
-        console.log(`❌ Send failed for ${endpoint}:`, fetchErr.message);
-        lastSendError = fetchErr;
-        // Continue to next endpoint
-        continue;
-      }
-    }
-    
-    // If all endpoints failed, throw error
-    if (!response) {
-      console.error('❌ All send endpoints failed');
-      throw lastSendError || new Error('All Wasender send endpoints failed');
+    try {
+      response = await fetch(sendEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${whatsappToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: normalizedPhone,
+          body: message
+        }),
+        signal: AbortSignal.timeout(10000) // 10 second timeout
+      });
+      
+      console.log(`✅ Got response from ${sendEndpoint}, status: ${response.status}`);
+    } catch (fetchErr) {
+      console.error(`❌ Fetch failed for ${sendEndpoint}:`, fetchErr.message);
+      console.error(`❌ Error type:`, fetchErr.constructor.name);
+      console.error(`❌ Error code:`, fetchErr.code);
+      throw fetchErr;
     }
     
     // Check response content type before parsing JSON
