@@ -1020,9 +1020,29 @@ app.post('/webhook/cloudtalk', async (req, res) => {
       console.log('📋 Data keys:', Object.keys(payload.data || {}).join(', '));
     }
     
+    // Process the webhook directly to ensure WhatsApp is sent
+    // The middleware will also save it, but we process it here to ensure it completes
+    const requestData = {
+      method: 'POST',
+      path: '/webhook/cloudtalk',
+      url: req.url,
+      headers: req.headers,
+      query: req.query,
+      body: req.body || null,
+      rawBody: req.rawBody || (req.body ? JSON.stringify(req.body) : null),
+      ip: req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown',
+      userAgent: req.get('user-agent') || 'unknown',
+      timestamp: new Date().toISOString()
+    };
+    
+    // Process the webhook and wait for it to complete (including WhatsApp sending)
+    console.log('🔄 Processing CloudTalk webhook directly...');
+    await saveRequestToDB(requestData);
+    console.log('✅ CloudTalk webhook processing completed');
+    
     res.json({ 
       success: true, 
-      message: 'CloudTalk webhook received and saved to database',
+      message: 'CloudTalk webhook received and processed',
       data: payload,
       received_at: new Date().toISOString()
     });
